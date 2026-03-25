@@ -7,6 +7,47 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.5.0] — 2026-03-26
+
+### Added
+
+- **Profile system** — first-class `ProfileDefinition` model with id, name, description, default plugins, expected surfaces, and scaffold groups
+- Built-in profiles: `generic` (no default plugins, vendor-neutral) and `codex` (activates `codex_instructions` plugin, expects `AGENTS.md`)
+- `govos profile list` — lists all registered profiles with their default plugins
+- `govos profile show <id>` — shows full profile details including expected and optional surfaces
+- `govos profile validate [PATH] [--json] [--out]` — checks whether the repo satisfies all expected surfaces for its configured profile; exits `1` if surfaces are missing
+- **Internal plugin system** — `Plugin` ABC with `run_checks(root, pipelines) -> list[Issue]`; all plugins are first-party and statically registered
+- Built-in plugins: `authority`, `doctrine`, `skills`, `codex_instructions`
+- `codex_instructions` plugin — checks for `AGENTS.md` at the repo root; emits `CODEX_MISSING_AGENTS_MD` (warning), `CODEX_EMPTY_AGENTS_MD` (warning), `CODEX_AGENTS_MD_SPARSE` (info)
+- Plugin activation model: `profile.default_plugins + config.enabled_plugins − config.disabled_plugins`; unknown plugin IDs are silently ignored
+- `GovernanceConfig` extended with `profile` (default `"generic"`), `enabled_plugins` (default `[]`), `disabled_plugins` (default `[]`) — fully backward-compatible
+- `Issue.source` optional field — plugin-generated issues carry `source=plugin_id`; core issues leave it `None`
+- `govos init --profile codex` now also scaffolds `AGENTS.md` with governance instructions
+- 70 new tests covering profile definitions, resolution, surface validation, plugin registry, all four plugins, activation logic, authority deduplication, and profile-aware preflight (378 total)
+
+### Changed
+
+- `api.preflight()` — extended with a plugin step (step 7) that runs active plugins based on the configured profile; additive, no breaking changes; `include_authority=True` suppresses the `authority` plugin to avoid duplication
+- JSON issue output now includes a `"source"` key when `Issue.source` is set (omitted when `None` to preserve existing schema for core issues)
+- README updated with Profiles and Plugins section documenting architecture, activation rules, configuration, and limitations
+
+---
+
+## [0.4.0] — 2026-03-26
+
+### Added
+
+- `govos score [PATH] [--json] [--out] [--compare] [--explain]` — computes an explainable governance score across five categories: integrity, readiness, coverage, drift, authority
+- Scoring formula: per category start=100, error=−25, warning=−10, info=not scored, floor=0; overall = mean of category scores; grade bands A/B/C/D/F
+- Prioritized findings: every finding is classified HIGH/MEDIUM/LOW based on explicit code membership with severity fallback; sorted findings included in score output
+- Five cross-signal derived insights that fire when specific code combinations are detected: `INSIGHT_CANDIDATE_READY`, `INSIGHT_PIPELINE_INCONSISTENCY`, `INSIGHT_GOVERNANCE_BREAKDOWN`, `INSIGHT_CONTRACT_QUALITY_GAP`, `INSIGHT_GRAPH_INTEGRITY_FAILURE`
+- `--compare <path>` flag on `govos score` — compares current scores against a previous score JSON report and emits a delta summary
+- `--explain` flag on `govos score` — includes the scoring formula in output
+- New modules: `src/governance_os/intelligence/` (priority, scoring, insights, comparison), `src/governance_os/models/score.py`
+- 79 new tests (308 total) covering scoring correctness, grade bands, priority classification, all five insight patterns, delta computation, and edge cases
+
+---
+
 ## [0.3.0] — 2026-03-25
 
 ### Changed
