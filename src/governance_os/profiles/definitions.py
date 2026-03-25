@@ -87,5 +87,5 @@ CODEX = ProfileDefinition(
         "docs/governance",
     ),
     scaffold_groups=("common", "codex"),
-    supported_templates=("minimal", "governed"),
+    supported_templates=("minimal", "governed", "multi-agent"),
 )

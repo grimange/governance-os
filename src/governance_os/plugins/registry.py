@@ -21,6 +21,7 @@ from governance_os.plugins.authority_plugin import AuthorityPlugin
 from governance_os.plugins.base import Plugin
 from governance_os.plugins.codex_instructions import CodexInstructionsPlugin
 from governance_os.plugins.doctrine_plugin import DoctrinePlugin
+from governance_os.plugins.multi_agent_plugin import MultiAgentPlugin
 from governance_os.plugins.skills_plugin import SkillsPlugin
 from governance_os.profiles.registry import resolve_profile
 
@@ -33,6 +34,7 @@ _PLUGIN_REGISTRY: dict[str, Plugin] = {
     "doctrine": DoctrinePlugin(),
     "skills": SkillsPlugin(),
     "codex_instructions": CodexInstructionsPlugin(),
+    "multi_agent": MultiAgentPlugin(),
 }
 
 

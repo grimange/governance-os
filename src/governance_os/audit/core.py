@@ -62,6 +62,9 @@ _PIPELINE_INDICATORS = frozenset(
 # Tokens that represent an explicit "no dependency" declaration
 _NO_DEP_TOKENS = frozenset({"none", "n/a", "n/a.", "-", "tbd"})
 
+# Required roles for a multi-agent Codex setup
+_REQUIRED_ROLES = ("planner", "implementer", "reviewer")
+
 
 class AuditResult(BaseModel):
     """Result of a governance audit operation."""
@@ -326,3 +329,145 @@ def audit_drift(root: Path, pipelines: list[Pipeline]) -> AuditResult:
         )
 
     return AuditResult(root=root, mode="drift", findings=findings)
+
+
+def audit_multi_agent(root: Path) -> AuditResult:
+    """Audit multi-agent Codex setup for structural completeness.
+
+    Checks that required role definitions, role governance contracts,
+    a workflow contract, and artifact directories are all present.
+
+    Does not check for agent execution or orchestration logic —
+    only governance structure completeness.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        AuditResult with multi-agent governance findings.
+    """
+    findings: list[Issue] = []
+
+    agents_dir = root / ".codex" / "agents"
+    role_contracts_dir = root / "docs" / "governance" / "agents"
+    workflow_contract = root / "docs" / "contracts" / "multi-agent-workflow.md"
+    handoffs_dir = root / "artifacts" / "governance" / "handoffs"
+    reviews_dir = root / "artifacts" / "governance" / "reviews"
+
+    # If the agents directory doesn't exist there's nothing to audit
+    if not agents_dir.exists():
+        findings.append(
+            Issue(
+                code="MULTIAGENT_SETUP_MISSING",
+                severity=Severity.WARNING,
+                message="Multi-agent setup not found: .codex/agents/ directory does not exist.",
+                path=root,
+                suggestion=(
+                    "Run `govos init --profile codex --template multi-agent` to scaffold "
+                    "the multi-agent structure."
+                ),
+            )
+        )
+        return AuditResult(root=root, mode="multi-agent", findings=findings)
+
+    # Check each required role definition (.codex/agents/<role>.toml)
+    for role in _REQUIRED_ROLES:
+        role_def = agents_dir / f"{role}.toml"
+        if not role_def.exists():
+            # Missing reviewer is an error — it creates role collapse risk
+            severity = Severity.ERROR if role == "reviewer" else Severity.WARNING
+            code = "MULTIAGENT_MISSING_REVIEWER" if role == "reviewer" else "MULTIAGENT_MISSING_ROLE_DEF"
+            findings.append(
+                Issue(
+                    code=code,
+                    severity=severity,
+                    message=f"Multi-agent role definition missing: .codex/agents/{role}.toml",
+                    path=agents_dir,
+                    suggestion=f"Create .codex/agents/{role}.toml to define the {role} agent role.",
+                )
+            )
+
+    # Check each required role contract (docs/governance/agents/<role>.md)
+    for role in _REQUIRED_ROLES:
+        contract_path = role_contracts_dir / f"{role}.md"
+        if not contract_path.exists():
+            findings.append(
+                Issue(
+                    code="MULTIAGENT_MISSING_ROLE_CONTRACT",
+                    severity=Severity.WARNING,
+                    message=f"Role governance contract missing: docs/governance/agents/{role}.md",
+                    path=role_contracts_dir if role_contracts_dir.exists() else root,
+                    suggestion=(
+                        f"Create docs/governance/agents/{role}.md to define the {role} "
+                        "role's governance obligations and forbidden actions."
+                    ),
+                )
+            )
+        elif not contract_path.read_text(encoding="utf-8").strip():
+            findings.append(
+                Issue(
+                    code="MULTIAGENT_EMPTY_ROLE_CONTRACT",
+                    severity=Severity.WARNING,
+                    message=f"Role governance contract is empty: docs/governance/agents/{role}.md",
+                    path=contract_path,
+                    suggestion=f"Add governance content to docs/governance/agents/{role}.md.",
+                )
+            )
+
+    # Check for role mismatch: .toml defined but no corresponding .md contract
+    if role_contracts_dir.exists():
+        toml_roles = {f.stem for f in agents_dir.glob("*.toml")}
+        md_roles = {f.stem for f in role_contracts_dir.glob("*.md")}
+        for role in sorted(toml_roles - md_roles - set(_REQUIRED_ROLES)):
+            findings.append(
+                Issue(
+                    code="MULTIAGENT_ROLE_MISMATCH",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Role '{role}' has a definition (.codex/agents/{role}.toml) "
+                        "but no governance contract."
+                    ),
+                    path=agents_dir / f"{role}.toml",
+                    suggestion=f"Create docs/governance/agents/{role}.md.",
+                )
+            )
+
+    # Check workflow contract
+    if not workflow_contract.exists():
+        findings.append(
+            Issue(
+                code="MULTIAGENT_MISSING_WORKFLOW",
+                severity=Severity.WARNING,
+                message="Multi-agent workflow contract missing: docs/contracts/multi-agent-workflow.md",
+                path=root / "docs" / "contracts",
+                suggestion=(
+                    "Create docs/contracts/multi-agent-workflow.md to define the "
+                    "multi-agent sequence, artifacts, and completion criteria."
+                ),
+            )
+        )
+
+    # Check artifact directories
+    if not handoffs_dir.exists():
+        findings.append(
+            Issue(
+                code="MULTIAGENT_MISSING_HANDOFFS_DIR",
+                severity=Severity.INFO,
+                message="Handoff artifact directory not found: artifacts/governance/handoffs/",
+                path=root / "artifacts" / "governance",
+                suggestion="Create artifacts/governance/handoffs/ to store planner handoff records.",
+            )
+        )
+
+    if not reviews_dir.exists():
+        findings.append(
+            Issue(
+                code="MULTIAGENT_MISSING_REVIEWS_DIR",
+                severity=Severity.INFO,
+                message="Review artifact directory not found: artifacts/governance/reviews/",
+                path=root / "artifacts" / "governance",
+                suggestion="Create artifacts/governance/reviews/ to store reviewer outcome records.",
+            )
+        )
+
+    return AuditResult(root=root, mode="multi-agent", findings=findings)

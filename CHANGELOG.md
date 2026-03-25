@@ -7,6 +7,25 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.7.0] — 2026-03-26
+
+### Added
+
+- `govos init --profile codex --template multi-agent` — scaffolds role-specialized multi-agent Codex structure: `.codex/agents/` role definitions (planner, implementer, reviewer), `docs/governance/agents/` role contracts, `docs/contracts/multi-agent-workflow.md`, and `artifacts/governance/handoffs/` + `artifacts/governance/reviews/` artifact directories; extends the `governed` template
+- `govos audit multi-agent [PATH] [--json] [--out]` — audits multi-agent setup for structural completeness; checks role definitions, role contracts, workflow contract, artifact directories; missing reviewer emits ERROR, other gaps emit WARNING, missing artifact dirs emit INFO
+- `MultiAgentPlugin` (`plugin_id = "multi_agent"`) — wraps `audit_multi_agent`; not in any default_plugins; activate via `enabled_plugins: [multi_agent]` in governance.yaml; automatically enabled by `govos init --template multi-agent`
+- `audit_multi_agent(root)` function in `audit/core.py` — 9 finding codes: `MULTIAGENT_SETUP_MISSING`, `MULTIAGENT_MISSING_ROLE_DEF`, `MULTIAGENT_MISSING_REVIEWER` (ERROR), `MULTIAGENT_MISSING_ROLE_CONTRACT`, `MULTIAGENT_EMPTY_ROLE_CONTRACT`, `MULTIAGENT_ROLE_MISMATCH`, `MULTIAGENT_MISSING_WORKFLOW`, `MULTIAGENT_MISSING_HANDOFFS_DIR`, `MULTIAGENT_MISSING_REVIEWS_DIR`
+- `multi-agent` added to CODEX profile `supported_templates`; displayed by `govos profile show codex`
+- `_governance_yaml()` extended with `template` parameter — `multi-agent` template writes `enabled_plugins: [multi_agent]` to generated `governance.yaml`
+- 39 new tests covering scaffold generation, role definition content, role contract content, workflow contract, audit checks for all 9 finding codes, plugin registration, plugin preflight integration (457 total)
+
+### Changed
+
+- `api.audit()` dispatcher now supports `"multi-agent"` mode (raises `ValueError` for unknown modes as before)
+- README updated with `codex:multi-agent` scaffold layout, `govos audit multi-agent` documentation, and plugin activation instructions
+
+---
+
 ## [0.6.0] — 2026-03-26
 
 ### Added

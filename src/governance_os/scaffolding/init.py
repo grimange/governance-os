@@ -29,7 +29,8 @@ class InitProfile(StrEnum):
 
 
 # Valid template names for the --template flag (subset of InitLevel, excludes "standard")
-VALID_TEMPLATES = frozenset({"minimal", "governed"})
+# "multi-agent" extends governed and is only valid for the codex profile
+VALID_TEMPLATES = frozenset({"minimal", "governed", "multi-agent"})
 
 # ---------------------------------------------------------------------------
 # Example pipeline template
@@ -176,6 +177,216 @@ _CODEX_PREFLIGHT_SKILL = """\
 - No unresolved ERROR issues
 """
 
+# ---------------------------------------------------------------------------
+# Multi-agent role definition templates (.codex/agents/*.toml)
+# ---------------------------------------------------------------------------
+
+_PLANNER_TOML = """\
+# .codex/agents/planner.toml — Planner agent definition
+
+[agent]
+id = "planner"
+role = "planner"
+description = "Decomposes work into governed pipeline contracts before implementation begins."
+
+[responsibilities]
+required = [
+  "Produce a task breakdown before implementation begins",
+  "Ensure each task maps to a pipeline contract in governance/pipelines/",
+  "Declare all inter-task dependencies",
+  "Obtain explicit approval before handoff to implementer",
+]
+
+[handoff]
+produces = "artifacts/governance/handoffs/"
+
+[constraints]
+forbidden = [
+  "Modifying implementation files directly",
+  "Bypassing governance review steps",
+]
+"""
+
+_IMPLEMENTER_TOML = """\
+# .codex/agents/implementer.toml — Implementer agent definition
+
+[agent]
+id = "implementer"
+role = "implementer"
+description = "Executes work as defined in approved pipeline contracts."
+
+[responsibilities]
+required = [
+  "Execute only work declared in an approved pipeline contract",
+  "Produce all declared contract outputs",
+  "Run govos preflight before and after governance-affecting changes",
+  "Record completion in review request artifact",
+]
+
+[handoff]
+receives = "artifacts/governance/handoffs/"
+produces = "artifacts/governance/reviews/"
+
+[constraints]
+forbidden = [
+  "Expanding scope beyond the pipeline contract",
+  "Modifying governance contracts without planner approval",
+]
+"""
+
+_REVIEWER_TOML = """\
+# .codex/agents/reviewer.toml — Reviewer agent definition
+
+[agent]
+id = "reviewer"
+role = "reviewer"
+description = "Validates that implementation outputs match the pipeline contract."
+
+[responsibilities]
+required = [
+  "Verify all declared contract outputs exist and are non-empty",
+  "Run govos verify and govos preflight",
+  "Check that no out-of-scope changes were made",
+  "Produce a review outcome record in artifacts/governance/reviews/",
+]
+
+[handoff]
+receives = "artifacts/governance/reviews/"
+produces = "Approval or rejection decision"
+
+[constraints]
+forbidden = [
+  "Approving incomplete or non-compliant outputs",
+  "Skipping govos preflight validation",
+]
+"""
+
+# ---------------------------------------------------------------------------
+# Multi-agent role contract templates (docs/governance/agents/*.md)
+# ---------------------------------------------------------------------------
+
+_PLANNER_CONTRACT = """\
+# Role Contract: Planner
+
+**Profile:** codex
+**Role ID:** planner
+
+## Purpose
+
+Decompose work into governed pipeline contracts before any implementation begins.
+
+## Responsibilities
+
+1. Produce a task breakdown for each work unit.
+2. Ensure each task maps to a pipeline contract in governance/pipelines/.
+3. Declare all inter-task dependencies.
+4. Obtain explicit approval before handing off to the implementer.
+
+## Required Outputs
+
+- Handoff record in artifacts/governance/handoffs/
+
+## Forbidden Actions
+
+- Modifying implementation files directly
+- Bypassing governance review steps
+"""
+
+_IMPLEMENTER_CONTRACT = """\
+# Role Contract: Implementer
+
+**Profile:** codex
+**Role ID:** implementer
+
+## Purpose
+
+Execute work as defined in approved pipeline contracts.
+
+## Responsibilities
+
+1. Execute only work declared in an approved pipeline contract.
+2. Produce all declared contract outputs.
+3. Run `govos preflight` before and after governance-affecting changes.
+4. Record completion status in review request artifact.
+
+## Required Outputs
+
+- All outputs declared in the active pipeline contract
+- Review request artifact in artifacts/governance/reviews/
+
+## Forbidden Actions
+
+- Expanding scope beyond the pipeline contract
+- Modifying governance contracts without planner approval
+"""
+
+_REVIEWER_CONTRACT = """\
+# Role Contract: Reviewer
+
+**Profile:** codex
+**Role ID:** reviewer
+
+## Purpose
+
+Validate that implementation outputs match the pipeline contract and governance rules.
+
+## Responsibilities
+
+1. Verify all declared contract outputs exist and are non-empty.
+2. Run `govos verify` and `govos preflight`.
+3. Check that no out-of-scope changes were made.
+4. Produce a review outcome record.
+
+## Required Outputs
+
+- Review outcome in artifacts/governance/reviews/
+
+## Forbidden Actions
+
+- Approving incomplete or non-compliant outputs
+- Skipping govos preflight validation
+"""
+
+# ---------------------------------------------------------------------------
+# Multi-agent workflow contract (docs/contracts/multi-agent-workflow.md)
+# ---------------------------------------------------------------------------
+
+_MULTI_AGENT_WORKFLOW = """\
+# Multi-Agent Workflow Contract
+
+**Profile:** codex
+**Template:** multi-agent
+
+## Roles
+
+| Role | ID | Responsibility |
+|---|---|---|
+| Planner | planner | Decomposes work into pipeline contracts |
+| Implementer | implementer | Executes work per approved contracts |
+| Reviewer | reviewer | Validates outputs against contracts |
+
+## Sequence
+
+1. **Plan** — Planner decomposes work, maps tasks to pipeline contracts, deposits handoff in artifacts/governance/handoffs/
+2. **Implement** — Implementer executes work, produces declared outputs, deposits review request in artifacts/governance/reviews/
+3. **Review** — Reviewer validates outputs, runs govos preflight, records outcome
+
+## Artifacts
+
+| Artifact | Path | Written by |
+|---|---|---|
+| Handoff records | artifacts/governance/handoffs/ | Planner |
+| Review requests | artifacts/governance/reviews/ | Implementer |
+| Review outcomes | artifacts/governance/reviews/ | Reviewer |
+
+## Completion Criteria
+
+- All declared pipeline outputs exist
+- `govos preflight` passes
+- Review outcome recorded as approved
+- No out-of-scope changes present
+"""
+
 _DOCTRINE_TEMPLATE = """\
 # Governance Doctrine
 
@@ -195,12 +406,13 @@ _DOCTRINE_TEMPLATE = """\
 # ---------------------------------------------------------------------------
 
 
-def _governance_yaml(profile: str, governed: bool) -> str:
+def _governance_yaml(profile: str, governed: bool, template: str = "") -> str:
     """Generate governance.yaml content for the given profile and structure level.
 
     Args:
         profile: Profile identifier ("generic" or "codex").
         governed: True for governed-level content (authority, registry, audit sections).
+        template: Template name — used to enable plugins when template="multi-agent".
 
     Returns:
         YAML string suitable for writing to governance.yaml.
@@ -211,6 +423,12 @@ def _governance_yaml(profile: str, governed: bool) -> str:
         'contracts_glob: "**/*.md"',
         f"profile: {profile}",
     ]
+    if template == "multi-agent":
+        lines += [
+            "",
+            "enabled_plugins:",
+            "  - multi_agent",
+        ]
     if governed:
         lines += [
             "",
@@ -300,7 +518,8 @@ def init_repo(
                 f"Invalid template: {template!r}. "
                 f"Supported templates: {', '.join(sorted(VALID_TEMPLATES))}"
             )
-        effective_level = template
+        # "multi-agent" builds on the governed base level
+        effective_level = "governed" if template == "multi-agent" else template
     else:
         effective_level = level
 
@@ -323,9 +542,11 @@ def init_repo(
         template=effective_template,
     )
 
-    # Decide governance.yaml content upfront (profile + governed flag)
+    # Decide governance.yaml content upfront (profile + governed flag + template)
     is_governed = init_level == InitLevel.GOVERNED
-    gov_yaml_content = _governance_yaml(init_profile.value, governed=is_governed)
+    gov_yaml_content = _governance_yaml(
+        init_profile.value, governed=is_governed, template=effective_template
+    )
 
     # ------------------------------------------------------------------
     # MINIMAL — absolute minimum governance structure
@@ -340,7 +561,7 @@ def init_repo(
     )
 
     if init_level == InitLevel.MINIMAL:
-        _apply_profile(result, root, init_profile, init_level)
+        _apply_profile(result, root, init_profile, init_level, effective_template)
         return result
 
     # ------------------------------------------------------------------
@@ -354,7 +575,7 @@ def init_repo(
     )
 
     if init_level == InitLevel.STANDARD and not with_doctrine:
-        _apply_profile(result, root, init_profile, init_level)
+        _apply_profile(result, root, init_profile, init_level, effective_template)
         return result
 
     # ------------------------------------------------------------------
@@ -378,7 +599,7 @@ def init_repo(
             _DOCTRINE_TEMPLATE,
         )
 
-    _apply_profile(result, root, init_profile, init_level)
+    _apply_profile(result, root, init_profile, init_level, effective_template)
     return result
 
 
@@ -387,6 +608,7 @@ def _apply_profile(
     root: Path,
     profile: InitProfile,
     level: InitLevel,
+    template: str = "",
 ) -> None:
     """Apply profile-specific scaffold assets.
 
@@ -395,6 +617,7 @@ def _apply_profile(
         root: Repo root directory.
         profile: Active profile.
         level: Effective init level (controls which profile assets are included).
+        template: Effective template name (controls multi-agent extras).
     """
     if profile == InitProfile.CODEX:
         # Always-on Codex assets (all templates)
@@ -414,6 +637,47 @@ def _apply_profile(
                 result,
                 root / "governance" / "skills" / "govos-preflight.skill.md",
                 _CODEX_PREFLIGHT_SKILL,
+            )
+
+        # Codex multi-agent: role definitions, role contracts, workflow, artifact dirs
+        if template == "multi-agent":
+            # Role definitions (.codex/agents/)
+            _write_file(result, root / ".codex" / "agents" / "planner.toml", _PLANNER_TOML)
+            _write_file(result, root / ".codex" / "agents" / "implementer.toml", _IMPLEMENTER_TOML)
+            _write_file(result, root / ".codex" / "agents" / "reviewer.toml", _REVIEWER_TOML)
+
+            # Role governance contracts (docs/governance/agents/)
+            _write_file(
+                result,
+                root / "docs" / "governance" / "agents" / "planner.md",
+                _PLANNER_CONTRACT,
+            )
+            _write_file(
+                result,
+                root / "docs" / "governance" / "agents" / "implementer.md",
+                _IMPLEMENTER_CONTRACT,
+            )
+            _write_file(
+                result,
+                root / "docs" / "governance" / "agents" / "reviewer.md",
+                _REVIEWER_CONTRACT,
+            )
+
+            # Workflow contract (docs/contracts/)
+            _write_file(
+                result,
+                root / "docs" / "contracts" / "multi-agent-workflow.md",
+                _MULTI_AGENT_WORKFLOW,
+            )
+
+            # Artifact directories for handoffs and reviews
+            _create_dir(result, root / "artifacts" / "governance" / "handoffs")
+            _create_dir(result, root / "artifacts" / "governance" / "reviews")
+            _write_file(
+                result, root / "artifacts" / "governance" / "handoffs" / ".gitkeep", ""
+            )
+            _write_file(
+                result, root / "artifacts" / "governance" / "reviews" / ".gitkeep", ""
             )
 
 

@@ -410,6 +410,26 @@ def audit_drift(
     raise typer.Exit(0 if result.passed else 1)
 
 
+@audit_app.command("multi-agent")
+def audit_multi_agent(
+    path: str = typer.Argument(".", help="Root path to audit."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
+    out: Path | None = typer.Option(None, "--out", help="Write report to this file path."),
+) -> None:
+    """Audit multi-agent Codex setup: check roles, contracts, workflow, and artifact dirs."""
+    root = _resolve_root(path)
+    result = api.audit(root, mode="multi-agent")
+
+    if json_output:
+        data = audit_to_json(result)
+        typer.echo(to_json_str(data))
+        _maybe_write_json(data, out)
+        raise typer.Exit(0 if result.passed else 1)
+    typer.echo(format_audit(result))
+    _maybe_write(audit_report(result), out)
+    raise typer.Exit(0 if result.passed else 1)
+
+
 # ---------------------------------------------------------------------------
 # Discover commands
 # ---------------------------------------------------------------------------

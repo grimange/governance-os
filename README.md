@@ -89,6 +89,7 @@ Most commands also accept `--out <path>` to write a report file to disk.
 |---|---|
 | `minimal` | `governance/pipelines/`, `artifacts/`, `governance.yaml` |
 | `governed` | above + `docs/governance/`, `governance/skills/`, `governance/doctrine/`, `artifacts/governance/` |
+| `multi-agent` | `governed` + role definitions, role contracts, workflow contract, handoff/review dirs (codex only) |
 
 ### Scaffold combinations
 
@@ -130,7 +131,32 @@ your-repo/
 └── governance.yaml
 ```
 
-`AGENTS.md` is kept short and operational. Detailed procedures live in `governance/skills/` where they do not burden the always-read instruction surface.
+**`codex:multi-agent`** — multi-agent role structure (extends governed):
+
+```
+your-repo/
+├── .codex/
+│   ├── config.toml
+│   └── agents/
+│       ├── planner.toml        # role definition
+│       ├── implementer.toml
+│       └── reviewer.toml
+├── docs/
+│   ├── governance/agents/
+│   │   ├── planner.md          # role governance contract
+│   │   ├── implementer.md
+│   │   └── reviewer.md
+│   └── contracts/
+│       └── multi-agent-workflow.md
+├── artifacts/governance/
+│   ├── handoffs/               # planner deposits handoff records here
+│   └── reviews/                # implementer/reviewer exchange here
+├── governance/  (all governed assets)
+├── AGENTS.md
+└── governance.yaml             # includes enabled_plugins: [multi_agent]
+```
+
+`AGENTS.md` is kept short and operational. Role procedures live in `docs/governance/agents/` and the workflow contract lives in `docs/contracts/` — neither burdens the always-read instruction surface.
 
 ---
 
@@ -236,21 +262,23 @@ The package runs with defaults if `governance.yaml` is absent.
 Initialises a governance-os repo at PATH (default `.`).
 
 ```
-govos init --profile generic --template minimal   # bare structure
-govos init --profile codex --template minimal     # Codex with minimal scaffold
-govos init --profile codex --template governed    # Codex with full governance surface
+govos init --profile generic --template minimal        # bare structure
+govos init --profile codex --template minimal          # Codex with minimal scaffold
+govos init --profile codex --template governed         # Codex with full governance surface
+govos init --profile codex --template multi-agent      # Codex with role-specialized agents
 ```
 
 **`--profile`:** `generic` (default) or `codex`
 
-**`--template`:** `minimal` or `governed`
+**`--template`:** `minimal`, `governed`, or `multi-agent` (codex only)
 
 | Template | Creates |
 |---|---|
 | `minimal` | `governance/pipelines/`, `artifacts/`, `governance.yaml` |
 | `governed` | above + `docs/governance/`, `governance/skills/`, `governance/doctrine/`, `artifacts/governance/` |
+| `multi-agent` | `governed` + `.codex/agents/` role definitions, `docs/governance/agents/` contracts, `docs/contracts/multi-agent-workflow.md`, `artifacts/governance/handoffs/`, `artifacts/governance/reviews/` |
 
-The `codex` profile adds `AGENTS.md`, `.codex/config.toml`, and `governance/sessions/` on top of the selected template. The `governed` template also adds `governance/skills/govos-preflight.skill.md` for the `codex` profile.
+The `codex` profile adds `AGENTS.md`, `.codex/config.toml`, and `governance/sessions/` on top of the selected template. The `multi-agent` template also adds `enabled_plugins: [multi_agent]` to `governance.yaml`.
 
 `--with-doctrine` scaffolds a doctrine file without requiring the full `governed` template.
 
@@ -311,6 +339,25 @@ Audits governance coverage: finds pipeline-like directories (containing Makefile
 
 Audits output drift: finds declared output artifacts that do not exist on disk.
 
+### `govos audit multi-agent [PATH] [--json] [--out PATH]`
+
+Audits multi-agent Codex setup for structural completeness. Checks:
+- `.codex/agents/` role definitions (planner, implementer, reviewer)
+- `docs/governance/agents/` role governance contracts
+- `docs/contracts/multi-agent-workflow.md` workflow contract
+- `artifacts/governance/handoffs/` and `artifacts/governance/reviews/` artifact directories
+
+Missing reviewer role is an ERROR (role collapse risk). Other missing roles and contracts are WARNINGs. Missing artifact directories are INFO.
+
+Activate the `multi_agent` plugin in `governance.yaml` to run these checks automatically as part of `govos preflight`:
+
+```yaml
+enabled_plugins:
+  - multi_agent
+```
+
+This is set automatically when using `govos init --profile codex --template multi-agent`.
+
 ---
 
 ### `govos discover candidates [PATH] [--json] [--out PATH]`
@@ -359,6 +406,7 @@ Computes an explainable governance score by running all checks and combining the
 | `readiness` | audit readiness (purpose, scope, success criteria, implementation notes) |
 | `coverage` | audit coverage (uncontracted pipeline surfaces) |
 | `drift` | audit drift (missing declared output artifacts) |
+| `multi-agent` | audit multi-agent setup (roles, contracts, workflow, artifact dirs) |
 | `authority` | authority validation issues |
 
 **Scoring formula:**

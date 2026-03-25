@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from governance_os.audit.core import AuditResult, audit_coverage, audit_drift, audit_readiness
+from governance_os.audit.core import (
+    AuditResult,
+    audit_coverage,
+    audit_drift,
+    audit_multi_agent,
+    audit_readiness,
+)
 from governance_os.authority.core import AuthorityResult, verify_authority
 from governance_os.config import GovernanceConfig, load_config
 from governance_os.config.loader import resolve_pipelines_dir
@@ -394,11 +400,14 @@ def audit(
     if config is None:
         config = load_config(root)
 
-    supported = {"readiness", "coverage", "drift"}
+    supported = {"readiness", "coverage", "drift", "multi-agent"}
     if mode not in supported:
         raise ValueError(
             f"Unsupported audit mode '{mode}'. Supported: {', '.join(sorted(supported))}"
         )
+
+    if mode == "multi-agent":
+        return audit_multi_agent(root)
 
     pipelines, parse_errors = _load_pipelines(root, config)
 
