@@ -33,7 +33,14 @@ from governance_os.models.score import PrioritizedFinding, ScoreResult
 from governance_os.models.status import StatusResult
 from governance_os.parsing.filenames import parse_filenames
 from governance_os.parsing.markdown_contract import ParseIssue, parse_contract
+from governance_os.plugins.registry import run_plugin_checks
 from governance_os.preflight.core import PreflightResult
+from governance_os.profiles.definitions import ProfileDefinition
+from governance_os.profiles.registry import (
+    list_profiles,
+    resolve_profile,
+    validate_profile_surfaces,
+)
 from governance_os.registry.core import RegistryResult, build_registry, reconcile_registry
 from governance_os.skills.core import SkillsResult, index_skills, verify_skills
 from governance_os.validation.integrity import validate_integrity
@@ -281,12 +288,20 @@ def preflight(
     """Run a fail-closed preflight governance readiness check.
 
     Composes: contract parsing, schema validation, integrity, graph analysis,
-    portability (optional), and authority (optional).
+    portability (optional), authority (optional), and active plugin checks.
+
+    Plugin activation is driven by:
+      - the `profile` field in config (or "generic" default)
+      - `enabled_plugins` / `disabled_plugins` in config
+
+    For the `codex` profile, `codex_instructions` is active by default.
+    Plugin checks are additive — they do not replace core checks.
 
     Args:
         root: Repo root directory.
         config: Optional pre-loaded config.
-        include_authority: Run authority validation in addition to standard checks.
+        include_authority: Run authority validation explicitly. Also activates
+            the authority plugin if not already in the active plugin set.
         include_portability: Run portability checks (default True).
 
     Returns:
@@ -327,11 +342,27 @@ def preflight(
         checks.append("portability")
         all_issues.extend(port_issues)
 
-    # 6. Authority (optional)
+    # 6. Authority (explicit flag — legacy path, kept for backward compatibility)
     if include_authority:
         auth_result = verify_authority(root, pipelines)
         checks.append("authority")
         all_issues.extend(auth_result.issues)
+
+    # 7. Plugin checks (profile-driven, additive)
+    #    Exclude "authority" plugin if already run via include_authority to avoid duplication.
+    disabled = list(config.disabled_plugins)
+    if include_authority and "authority" not in disabled:
+        disabled.append("authority")
+
+    plugin_check_names, plugin_issues = run_plugin_checks(
+        root,
+        pipelines,
+        profile_id=config.profile,
+        enabled_plugins=config.enabled_plugins,
+        disabled_plugins=disabled,
+    )
+    checks.extend(plugin_check_names)
+    all_issues.extend(plugin_issues)
 
     return PreflightResult(root=root, checks=checks, issues=all_issues)
 
@@ -579,3 +610,55 @@ def score(
         delta=deltas,
         formula_explanation=FORMULA_EXPLANATION,
     )
+
+
+# ---------------------------------------------------------------------------
+# Public API — profile commands (v0.5)
+# ---------------------------------------------------------------------------
+
+
+def profile_list() -> list[ProfileDefinition]:
+    """Return all registered governance profiles.
+
+    Returns:
+        List of ProfileDefinition objects in registration order.
+    """
+    return list_profiles()
+
+
+def profile_show(profile_id: str) -> ProfileDefinition | None:
+    """Return the ProfileDefinition for *profile_id*, or None if unknown.
+
+    Args:
+        profile_id: Profile identifier (e.g. "generic", "codex").
+
+    Returns:
+        ProfileDefinition or None if not found.
+    """
+    from governance_os.profiles.registry import PROFILES
+
+    return PROFILES.get(profile_id)
+
+
+def profile_validate(
+    root: Path | str,
+    config: GovernanceConfig | None = None,
+) -> tuple[ProfileDefinition, list[str]]:
+    """Check whether the repo satisfies the expected surfaces for its configured profile.
+
+    Args:
+        root: Repo root directory.
+        config: Optional pre-loaded config.
+
+    Returns:
+        (profile, missing_surfaces) where missing_surfaces is a list of
+        relative paths that the profile expects but do not exist.
+        Empty missing_surfaces means the repo is profile-conformant.
+    """
+    root = Path(root)
+    if config is None:
+        config = load_config(root)
+
+    profile = resolve_profile(config.profile)
+    missing = validate_profile_surfaces(root, profile)
+    return profile, missing

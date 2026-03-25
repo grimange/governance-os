@@ -23,5 +23,6 @@ class Issue(BaseModel):
     path: Path | None = None
     pipeline_id: str | None = None
     suggestion: str | None = None
+    source: str | None = None  # e.g. "core", "authority", "codex_instructions"
 
     model_config = {"frozen": True}

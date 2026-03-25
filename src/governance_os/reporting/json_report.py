@@ -28,7 +28,7 @@ from governance_os.skills.core import SkillEntry, SkillsResult
 
 
 def _issue(issue: Issue) -> dict[str, Any]:
-    return {
+    d: dict[str, Any] = {
         "code": issue.code,
         "severity": issue.severity.value,
         "message": issue.message,
@@ -36,6 +36,9 @@ def _issue(issue: Issue) -> dict[str, Any]:
         "pipeline_id": issue.pipeline_id,
         "suggestion": issue.suggestion,
     }
+    if issue.source is not None:
+        d["source"] = issue.source
+    return d
 
 
 def _pipeline(p: Pipeline) -> dict[str, Any]:

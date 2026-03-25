@@ -18,13 +18,14 @@ The runtime provides:
 - **Readiness classification** — reports each pipeline as `ready`, `blocked`, `invalid`, or `orphaned`
 - **Portability checks** — scans output declarations for non-portable paths
 - **Pipeline registry** — builds and verifies a structured snapshot of the governed pipeline set
-- **Preflight check** — single fail-closed governance readiness gate
+- **Preflight check** — single fail-closed governance readiness gate, profile-aware
 - **Audit analysis** — deeper governance coverage checks (readiness, coverage, drift)
 - **Authority validation** — verifies source-of-truth configuration
 - **Candidate discovery** — finds uncontracted pipeline-like directories
 - **Skills index** — indexes and validates reusable skill references
 - **Init profiles and levels** — scaffold governance at different maturity levels
 - **Governance scoring** — explainable score across five categories with prioritized findings, cross-signal insights, and optional trend comparison (v0.4)
+- **Profile + plugin system** — lightweight, statically registered internal plugins driven by repo profile (v0.5)
 
 ---
 
@@ -390,6 +391,112 @@ Findings: 4 high, 6 medium, 2 low
 
 ---
 
+## Profiles and Plugins (v0.5)
+
+### What profiles are
+
+Profiles define repo-level governance conventions. They set:
+- expected surfaces (files/directories that should exist)
+- default active plugins
+- scaffold asset groups applied by `govos init`
+
+Profiles are **data definitions**, not code. They do not change the core runtime behavior — they select which optional plugins run.
+
+### Available profiles
+
+| Profile | Default plugins | Expected surfaces |
+|---|---|---|
+| `generic` | none | `governance/pipelines`, `artifacts`, `governance.yaml` |
+| `codex` | `codex_instructions` | above + `AGENTS.md` |
+
+### What plugins are
+
+Plugins add optional validation checks on top of the core runtime. They are:
+- first-party (no external loading)
+- statically registered (inspectable at any time)
+- additive (they do not replace core checks)
+
+| Plugin ID | What it checks |
+|---|---|
+| `authority` | source-of-truth configuration (governance.yaml, contract locations) |
+| `doctrine` | governance doctrine files in `governance/doctrine/` |
+| `skills` | skill definitions in `governance/skills/` |
+| `codex_instructions` | `AGENTS.md` existence and content |
+
+### Plugin activation (deterministic)
+
+```
+active = profile.default_plugins
+       + config.enabled_plugins     (deduplicated, config order)
+       - config.disabled_plugins
+```
+
+Only plugins in the built-in registry can be activated. Unknown plugin IDs are silently ignored.
+
+### Configuring the profile in governance.yaml
+
+```yaml
+profile: codex
+
+# Optional overrides:
+enabled_plugins:
+  - doctrine
+  - skills
+disabled_plugins:
+  - codex_instructions
+```
+
+### Difference between generic and codex
+
+- `generic` — vendor-neutral, no agent-specific assumptions, no extra plugins
+- `codex` — Codex-oriented; activates `codex_instructions` (checks for `AGENTS.md`), scaffolds session contracts and `AGENTS.md`
+
+The core runtime remains the same for both. Profile selection is purely additive.
+
+### Profile-aware init
+
+```
+govos init --profile generic    # default, no agent-specific assets
+govos init --profile codex      # creates AGENTS.md + governance/sessions/
+```
+
+### Profile-aware validation
+
+Preflight automatically activates plugins based on the configured profile:
+
+```
+# In a codex-profile repo (profile: codex in governance.yaml):
+govos preflight
+# — runs all core checks
+# — also runs codex_instructions plugin (checks AGENTS.md)
+# — findings include source="codex_instructions" on plugin-generated issues
+```
+
+### Limitations
+
+- Only `generic` and `codex` profiles are built-in. There is no third-party profile registry.
+- Plugins are internal and cannot be loaded from user code.
+- Profile does not change the schema validation rules — contract format is universal.
+- `govos verify` is not profile-aware; it validates contracts only. Profile checks are in `govos preflight`.
+
+---
+
+### `govos profile list`
+
+Lists all available governance profiles with their default plugins.
+
+### `govos profile show PROFILE_ID`
+
+Shows full details of a specific profile, including expected surfaces and optional surfaces.
+
+### `govos profile validate [PATH] [--json] [--out PATH]`
+
+Checks whether the repo satisfies the expected surfaces for its configured profile.
+Reads `profile` from `governance.yaml` (defaults to `generic`).
+Exits `0` if all expected surfaces exist, `1` if any are missing.
+
+---
+
 ## Python API
 
 ```python
@@ -423,6 +530,11 @@ skills_v         = api.skills_verify(root)   # SkillsResult
 # v0.4 — Intelligence
 score_result     = api.score(root)                          # ScoreResult
 score_with_delta = api.score(root, compare_path=Path("prev.json"))  # ScoreResult with delta
+
+# v0.5 — Profiles and plugins
+profiles         = api.profile_list()                       # list[ProfileDefinition]
+profile          = api.profile_show("codex")                # ProfileDefinition | None
+profile, missing = api.profile_validate(root)               # (ProfileDefinition, list[str])
 ```
 
 All functions return typed Pydantic models. See `src/governance_os/models/` for full model definitions.

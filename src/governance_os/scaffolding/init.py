@@ -113,6 +113,35 @@ _CODEX_SESSION_TEMPLATE = """\
 - [ ] Verified
 """
 
+_AGENTS_MD_TEMPLATE = """\
+# AGENTS.md — Codex Governance Instructions
+
+This repository uses governance-os for pipeline contract management.
+
+## Governance Structure
+
+- Pipeline contracts: `governance/pipelines/`
+- Governance config: `governance.yaml`
+- Session contracts: `governance/sessions/`
+
+## Rules for Codex
+
+1. Do not modify pipeline contracts without explicit authorization.
+2. All pipeline outputs must be declared in the contract.
+3. Dependencies must reference numeric pipeline IDs, not file paths.
+4. Run `govos preflight` before making governance-affecting changes.
+
+## Quick Reference
+
+```
+govos scan             # discover all pipeline contracts
+govos verify           # validate contracts and dependency graph
+govos preflight        # fail-closed readiness gate
+govos score            # governance health score
+govos profile validate # check repo conforms to active profile
+```
+"""
+
 _DOCTRINE_TEMPLATE = """\
 # Governance Doctrine
 
@@ -265,6 +294,11 @@ def _apply_profile(result: ScaffoldResult, root: Path, profile: InitProfile) -> 
             result,
             root / "governance" / "sessions" / "session-template.md",
             _CODEX_SESSION_TEMPLATE,
+        )
+        _write_file(
+            result,
+            root / "AGENTS.md",
+            _AGENTS_MD_TEMPLATE,
         )
 
 

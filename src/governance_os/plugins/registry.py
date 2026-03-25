@@ -1,0 +1,107 @@
+"""Plugin registry and activation logic for governance-os.
+
+All plugins are statically registered. There is no dynamic loading.
+
+Plugin activation order (deterministic):
+  1. Start with the profile's default_plugins (ordered list).
+  2. Append enabled_plugins from repo config (deduplicated, in order listed).
+  3. Remove disabled_plugins from repo config.
+
+Only plugins present in _PLUGIN_REGISTRY can be activated.
+Unknown plugin IDs in config are ignored silently.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from governance_os.models.issue import Issue
+from governance_os.models.pipeline import Pipeline
+from governance_os.plugins.authority_plugin import AuthorityPlugin
+from governance_os.plugins.base import Plugin
+from governance_os.plugins.codex_instructions import CodexInstructionsPlugin
+from governance_os.plugins.doctrine_plugin import DoctrinePlugin
+from governance_os.plugins.skills_plugin import SkillsPlugin
+from governance_os.profiles.registry import resolve_profile
+
+# ---------------------------------------------------------------------------
+# Static plugin registry
+# ---------------------------------------------------------------------------
+
+_PLUGIN_REGISTRY: dict[str, Plugin] = {
+    "authority": AuthorityPlugin(),
+    "doctrine": DoctrinePlugin(),
+    "skills": SkillsPlugin(),
+    "codex_instructions": CodexInstructionsPlugin(),
+}
+
+
+def list_plugins() -> list[Plugin]:
+    """Return all registered plugins in registration order."""
+    return list(_PLUGIN_REGISTRY.values())
+
+
+def resolve_active_plugins(
+    profile_id: str,
+    enabled_plugins: list[str],
+    disabled_plugins: list[str],
+) -> list[str]:
+    """Resolve the ordered list of active plugin IDs.
+
+    Activation rules (deterministic):
+      1. Start with profile.default_plugins (profile definition order).
+      2. Append config enabled_plugins (deduplicated, config order).
+      3. Remove config disabled_plugins.
+      4. Remove IDs not in _PLUGIN_REGISTRY (unknown plugins are skipped).
+
+    Args:
+        profile_id: Effective profile identifier.
+        enabled_plugins: Plugin IDs to additionally activate (from config).
+        disabled_plugins: Plugin IDs to deactivate (from config).
+
+    Returns:
+        Ordered list of active plugin IDs.
+    """
+    profile = resolve_profile(profile_id)
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for pid in list(profile.default_plugins) + enabled_plugins:
+        if pid not in seen:
+            seen.add(pid)
+            ordered.append(pid)
+
+    active = [pid for pid in ordered if pid not in disabled_plugins]
+    return [pid for pid in active if pid in _PLUGIN_REGISTRY]
+
+
+def run_plugin_checks(
+    root: Path,
+    pipelines: list[Pipeline],
+    profile_id: str,
+    enabled_plugins: list[str],
+    disabled_plugins: list[str],
+) -> tuple[list[str], list[Issue]]:
+    """Run all active plugin checks and return (check_names, issues).
+
+    Args:
+        root: Repo root directory.
+        pipelines: Parsed pipeline contracts.
+        profile_id: Effective profile identifier.
+        enabled_plugins: Additional plugins from config.
+        disabled_plugins: Plugins suppressed by config.
+
+    Returns:
+        (check_names, issues) where check_names are the plugin IDs that ran.
+    """
+    active_ids = resolve_active_plugins(profile_id, enabled_plugins, disabled_plugins)
+    check_names: list[str] = []
+    all_issues: list[Issue] = []
+
+    for pid in active_ids:
+        plugin = _PLUGIN_REGISTRY[pid]
+        issues = plugin.run_checks(root, pipelines)
+        check_names.append(pid)
+        all_issues.extend(issues)
+
+    return check_names, all_issues

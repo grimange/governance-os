@@ -75,6 +75,9 @@ app.add_typer(skills_app, name="skills")
 doctrine_app = typer.Typer(help="Doctrine scaffolding and validation commands.")
 app.add_typer(doctrine_app, name="doctrine")
 
+profile_app = typer.Typer(help="Profile inspection and validation commands.")
+app.add_typer(profile_app, name="profile")
+
 
 def _resolve_root(path: str) -> Path:
     return Path(path).resolve()
@@ -505,6 +508,85 @@ def doctrine_validate(
     for issue in issues:
         typer.echo(f"  [{issue.severity.upper()}] [{issue.code}] {issue.message}")
     raise typer.Exit(1 if has_errors else 0)
+
+
+# ---------------------------------------------------------------------------
+# Profile commands (v0.5)
+# ---------------------------------------------------------------------------
+
+
+@profile_app.command("list")
+def profile_list_cmd() -> None:
+    """List all available governance profiles."""
+    profiles = api.profile_list()
+    for p in profiles:
+        plugins = ", ".join(p.default_plugins) if p.default_plugins else "none"
+        typer.echo(f"  [{p.id}] {p.name}")
+        typer.echo(f"    {p.description}")
+        typer.echo(f"    default plugins: {plugins}")
+        typer.echo("")
+
+
+@profile_app.command("show")
+def profile_show_cmd(
+    profile_id: str = typer.Argument(..., help="Profile ID to show (e.g. generic, codex)."),
+) -> None:
+    """Show details of a specific governance profile."""
+    profile = api.profile_show(profile_id)
+    if profile is None:
+        typer.echo(f"Profile not found: {profile_id!r}")
+        raise typer.Exit(1)
+
+    typer.echo(f"Profile: {profile.id}")
+    typer.echo(f"  Name: {profile.name}")
+    typer.echo(f"  Description: {profile.description}")
+    if profile.default_plugins:
+        typer.echo(f"  Default plugins: {', '.join(profile.default_plugins)}")
+    else:
+        typer.echo("  Default plugins: none")
+    if profile.expected_surfaces:
+        typer.echo("  Expected surfaces:")
+        for s in profile.expected_surfaces:
+            typer.echo(f"    - {s}")
+    if profile.optional_surfaces:
+        typer.echo("  Optional surfaces:")
+        for s in profile.optional_surfaces:
+            typer.echo(f"    - {s}")
+
+
+@profile_app.command("validate")
+def profile_validate_cmd(
+    path: str = typer.Argument(".", help="Root path to validate against active profile."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
+    out: Path | None = typer.Option(None, "--out", help="Write report to this file path."),
+) -> None:
+    """Validate that the repo satisfies the expected surfaces for its profile.
+
+    Checks that all paths declared as expected_surfaces in the active profile exist.
+    Reads the profile from governance.yaml (or defaults to 'generic').
+    """
+    root = _resolve_root(path)
+    profile, missing = api.profile_validate(root)
+
+    if json_output:
+        data = {
+            "command": "profile validate",
+            "root": str(root),
+            "profile": profile.id,
+            "passed": len(missing) == 0,
+            "missing_surfaces": missing,
+        }
+        typer.echo(to_json_str(data))
+        _maybe_write_json(data, out)
+        raise typer.Exit(0 if not missing else 1)
+
+    if not missing:
+        typer.echo(f"OK — profile '{profile.id}' is satisfied. All expected surfaces present.")
+    else:
+        typer.echo(f"INCOMPLETE — profile '{profile.id}' expected surfaces missing:")
+        for m in missing:
+            typer.echo(f"  - {m}")
+    raise typer.Exit(0 if not missing else 1)
 
 
 if __name__ == "__main__":
