@@ -64,7 +64,7 @@ def test_scan_finds_pipeline(tmp_path):
 
 def test_scan_missing_dir(tmp_path):
     result = runner.invoke(app, ["scan", str(tmp_path)])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert (
         "0 pipeline" in result.output
         or "not found" in result.output.lower()

@@ -160,7 +160,9 @@ def registry_report(result: RegistryResult) -> str:
             "|---|---|---|---|---|",
         ]
         for e in result.entries:
-            lines.append(f"| {e.pipeline_id} | {e.slug} | {e.title or '—'} | {e.stage or '—'} | {e.outputs_count} |")
+            lines.append(
+                f"| {e.pipeline_id} | {e.slug} | {e.title or '—'} | {e.stage or '—'} | {e.outputs_count} |"
+            )
         lines.append("")
 
     if result.issues:

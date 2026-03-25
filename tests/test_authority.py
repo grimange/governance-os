@@ -26,7 +26,9 @@ def _make_pipeline(
 
 
 def test_authority_passes_with_config(tmp_path):
-    (tmp_path / "governance.yaml").write_text("pipelines_dir: governance/pipelines\n", encoding="utf-8")
+    (tmp_path / "governance.yaml").write_text(
+        "pipelines_dir: governance/pipelines\n", encoding="utf-8"
+    )
     (tmp_path / "governance" / "pipelines").mkdir(parents=True)
     p = _make_pipeline(path=tmp_path / "governance" / "pipelines" / "001--setup.md")
     result = verify_authority(tmp_path, [p])
@@ -44,7 +46,9 @@ def test_authority_missing_config(tmp_path):
 
 
 def test_authority_contract_in_artifact_dir(tmp_path):
-    (tmp_path / "governance.yaml").write_text("pipelines_dir: governance/pipelines\n", encoding="utf-8")
+    (tmp_path / "governance.yaml").write_text(
+        "pipelines_dir: governance/pipelines\n", encoding="utf-8"
+    )
     artifact_dir = tmp_path / "artifacts" / "generated"
     artifact_dir.mkdir(parents=True)
     contract_path = artifact_dir / "001--setup.md"
@@ -56,7 +60,9 @@ def test_authority_contract_in_artifact_dir(tmp_path):
 
 
 def test_authority_path_dependency(tmp_path):
-    (tmp_path / "governance.yaml").write_text("pipelines_dir: governance/pipelines\n", encoding="utf-8")
+    (tmp_path / "governance.yaml").write_text(
+        "pipelines_dir: governance/pipelines\n", encoding="utf-8"
+    )
     (tmp_path / "governance" / "pipelines").mkdir(parents=True)
     p = _make_pipeline(
         depends_on=["governance/pipelines/001--other.md"],
@@ -68,7 +74,9 @@ def test_authority_path_dependency(tmp_path):
 
 
 def test_authority_numeric_dependency_ok(tmp_path):
-    (tmp_path / "governance.yaml").write_text("pipelines_dir: governance/pipelines\n", encoding="utf-8")
+    (tmp_path / "governance.yaml").write_text(
+        "pipelines_dir: governance/pipelines\n", encoding="utf-8"
+    )
     (tmp_path / "governance" / "pipelines").mkdir(parents=True)
     p = _make_pipeline(
         depends_on=["001"],
@@ -80,9 +88,7 @@ def test_authority_numeric_dependency_ok(tmp_path):
 
 
 def test_authority_config_dir_missing(tmp_path):
-    (tmp_path / "governance.yaml").write_text(
-        "pipelines_dir: nonexistent/dir\n", encoding="utf-8"
-    )
+    (tmp_path / "governance.yaml").write_text("pipelines_dir: nonexistent/dir\n", encoding="utf-8")
     p = _make_pipeline(path=tmp_path / "nonexistent" / "dir" / "001--setup.md")
     result = verify_authority(tmp_path, [p])
     codes = [i.code for i in result.issues]

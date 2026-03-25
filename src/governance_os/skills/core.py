@@ -126,16 +126,26 @@ def index_skills(root: Path) -> SkillsResult:
         skill_id = _slug_from_path(skill_file)
         name = skill_file.stem.replace("-", " ").replace("_", " ").title()
 
-        # Extract description from first line if markdown
+        # Extract description from file content
         description = ""
         if skill_file.suffix == ".md":
             try:
-                first_lines = skill_file.read_text(encoding="utf-8").splitlines()
-                for line in first_lines[:5]:
+                for line in skill_file.read_text(encoding="utf-8").splitlines()[:5]:
                     line = line.strip().lstrip("#").strip()
                     if line:
                         description = line
                         break
+            except OSError:
+                pass
+        elif skill_file.suffix in {".yaml", ".yml"}:
+            try:
+                for line in skill_file.read_text(encoding="utf-8").splitlines()[:15]:
+                    stripped = line.strip()
+                    if stripped.startswith("description:"):
+                        description = stripped[len("description:") :].strip().strip('"').strip("'")
+                        break
+                    if stripped.startswith("name:") and not description:
+                        description = stripped[len("name:") :].strip().strip('"').strip("'")
             except OSError:
                 pass
 
@@ -151,7 +161,9 @@ def index_skills(root: Path) -> SkillsResult:
     return SkillsResult(root=root, skills_dir=skills_dir, entries=entries, issues=issues)
 
 
-def verify_skills(root: Path, pipelines_implementation_notes: list[str] | None = None) -> SkillsResult:
+def verify_skills(
+    root: Path, pipelines_implementation_notes: list[str] | None = None
+) -> SkillsResult:
     """Index skills and validate references.
 
     In addition to indexing, checks for:

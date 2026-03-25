@@ -10,7 +10,9 @@ from governance_os.registry.core import (
 )
 
 
-def _make_pipeline(num_id: str, slug: str, stage: str = "establish", outputs: list | None = None) -> Pipeline:
+def _make_pipeline(
+    num_id: str, slug: str, stage: str = "establish", outputs: list | None = None
+) -> Pipeline:
     return Pipeline(
         numeric_id=num_id,
         slug=slug,
@@ -90,7 +92,11 @@ def test_reconcile_registry_matches(tmp_path):
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
     result = reconcile_registry(tmp_path, [p], snapshot_path)
     # No stale or untracked entries
-    recon_codes = [i.code for i in result.issues if i.code in ("REGISTRY_STALE_ENTRY", "REGISTRY_UNTRACKED_PIPELINE")]
+    recon_codes = [
+        i.code
+        for i in result.issues
+        if i.code in ("REGISTRY_STALE_ENTRY", "REGISTRY_UNTRACKED_PIPELINE")
+    ]
     assert recon_codes == []
 
 

@@ -126,7 +126,11 @@ def discover_candidates(root: Path, pipelines: list[Pipeline]) -> CandidateResul
 
     if root.exists():
         for child in sorted(root.iterdir()):
-            if child.is_dir() and child.name not in _IGNORED_DIRS and not child.name.startswith("."):
+            if (
+                child.is_dir()
+                and child.name not in _IGNORED_DIRS
+                and not child.name.startswith(".")
+            ):
                 dirs_to_check.append(child)
 
     # Also check .github/workflows

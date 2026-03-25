@@ -59,6 +59,9 @@ _PIPELINE_INDICATORS = frozenset(
     }
 )
 
+# Tokens that represent an explicit "no dependency" declaration
+_NO_DEP_TOKENS = frozenset({"none", "n/a", "n/a.", "-", "tbd"})
+
 
 class AuditResult(BaseModel):
     """Result of a governance audit operation."""
@@ -84,7 +87,9 @@ class AuditResult(BaseModel):
         return sum(1 for f in self.findings if f.severity == Severity.WARNING)
 
 
-def audit_readiness(root: Path, pipelines: list[Pipeline], extra_issues: list[Issue] | None = None) -> AuditResult:
+def audit_readiness(
+    root: Path, pipelines: list[Pipeline], extra_issues: list[Issue] | None = None
+) -> AuditResult:
     """Audit governance readiness: find contracts missing important sections.
 
     Checks beyond basic schema validation:
@@ -116,8 +121,6 @@ def audit_readiness(root: Path, pipelines: list[Pipeline], extra_issues: list[Is
         )
         return AuditResult(root=root, mode="readiness", findings=findings)
 
-    _NO_DEP_TOKENS = frozenset({"none", "n/a", "-"})
-
     for p in pipelines:
         # Missing purpose (structural weakness)
         if not p.purpose.strip():
@@ -146,7 +149,9 @@ def audit_readiness(root: Path, pipelines: list[Pipeline], extra_issues: list[Is
             )
 
         # Weak success criteria (fewer than 2 entries)
-        real_criteria = [c for c in p.success_criteria if c.strip() and c.strip().lower() not in _NO_DEP_TOKENS]
+        real_criteria = [
+            c for c in p.success_criteria if c.strip() and c.strip().lower() not in _NO_DEP_TOKENS
+        ]
         if len(real_criteria) == 1:
             findings.append(
                 Issue(
@@ -158,11 +163,6 @@ def audit_readiness(root: Path, pipelines: list[Pipeline], extra_issues: list[Is
                     suggestion="Consider adding more specific success criteria to improve verifiability.",
                 )
             )
-
-        # No inputs declared (and not explicitly none)
-        explicit_no_input = any(i.strip().lower() in _NO_DEP_TOKENS for i in p.inputs)
-        if not p.inputs or (not explicit_no_input and not p.inputs):
-            pass  # inputs are optional, skip
 
         # No implementation notes
         if not p.implementation_notes.strip():
@@ -204,23 +204,28 @@ def audit_coverage(root: Path, pipelines: list[Pipeline], pipelines_dir: Path) -
     contracted_slugs = {p.slug for p in pipelines}
     contracted_paths = {p.path.parent for p in pipelines}
 
-    # Look for pipeline-indicator files in repo
+    # Look for pipeline-indicator files in repo (recursive)
     found_surfaces: list[tuple[Path, str]] = []
 
-    if root.exists():
-        for child in sorted(root.iterdir()):
+    def _walk(directory: Path) -> None:
+        try:
+            children = sorted(directory.iterdir())
+        except PermissionError:
+            return
+        for child in children:
             if not child.is_dir():
                 continue
             name = child.name
             if name in _IGNORED_DIRS or name.startswith("."):
                 continue
-
-            # Check if directory contains pipeline indicator files
             for indicator in _PIPELINE_INDICATORS:
-                indicator_path = child / indicator
-                if indicator_path.exists():
+                if (child / indicator).exists():
                     found_surfaces.append((child, indicator))
                     break
+            _walk(child)
+
+    if root.exists():
+        _walk(root)
 
     # Check .github/workflows specifically
     workflows_dir = root / ".github" / "workflows"
@@ -279,8 +284,6 @@ def audit_drift(root: Path, pipelines: list[Pipeline]) -> AuditResult:
         AuditResult with drift findings.
     """
     findings: list[Issue] = []
-
-    _NO_DEP_TOKENS = frozenset({"none", "n/a", "-", "tbd", "n/a."})
 
     for p in pipelines:
         for output in p.outputs:

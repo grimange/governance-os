@@ -21,6 +21,10 @@ class ScanResult(BaseModel):
     def total(self) -> int:
         return len(self.pipelines) + len(self.parse_errors)
 
+    @property
+    def passed(self) -> bool:
+        return len(self.parse_errors) == 0
+
 
 class VerifyResult(BaseModel):
     """Result of a full contract validation pass."""
@@ -49,4 +53,3 @@ class PortabilityResult(BaseModel):
     @property
     def passed(self) -> bool:
         return len(self.issues) == 0
-

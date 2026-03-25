@@ -61,7 +61,9 @@ def format_registry(result: RegistryResult) -> str:
     status = "OK" if result.passed else "FAIL"
     lines = [f"{status} — {result.entry_count} pipeline(s) in registry"]
     for e in result.entries:
-        lines.append(f"  [{e.pipeline_id}] {e.slug}  stage={e.stage or '?'}  outputs={e.outputs_count}")
+        lines.append(
+            f"  [{e.pipeline_id}] {e.slug}  stage={e.stage or '?'}  outputs={e.outputs_count}"
+        )
     if result.issues:
         lines.append(f"\n{len(result.issues)} issue(s):")
         for i in result.issues:

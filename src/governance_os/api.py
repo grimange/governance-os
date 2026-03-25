@@ -355,7 +355,9 @@ def audit(
 
     supported = {"readiness", "coverage", "drift"}
     if mode not in supported:
-        raise ValueError(f"Unsupported audit mode '{mode}'. Supported: {', '.join(sorted(supported))}")
+        raise ValueError(
+            f"Unsupported audit mode '{mode}'. Supported: {', '.join(sorted(supported))}"
+        )
 
     pipelines, parse_errors = _load_pipelines(root, config)
 

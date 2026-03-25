@@ -100,12 +100,18 @@ def _maybe_write_json(data: dict, out: Path | None) -> None:
 @app.command()
 def init(
     path: str = typer.Argument(".", help="Directory to initialize as a governance repo."),
-    level: str = typer.Option("standard", "--level", help="Governance maturity level: minimal, standard, governed."),
+    level: str = typer.Option(
+        "standard", "--level", help="Governance maturity level: minimal, standard, governed."
+    ),
     profile: str = typer.Option("generic", "--profile", help="Optional profile: generic, codex."),
-    with_doctrine: bool = typer.Option(False, "--with-doctrine", help="Scaffold an optional doctrine file."),
+    with_doctrine: bool = typer.Option(
+        False, "--with-doctrine", help="Scaffold an optional doctrine file."
+    ),
 ) -> None:
     """Initialize a governance-os repo with default structure."""
-    result = init_repo(_resolve_root(path), level=level, profile=profile, with_doctrine=with_doctrine)
+    result = init_repo(
+        _resolve_root(path), level=level, profile=profile, with_doctrine=with_doctrine
+    )
     typer.echo(format_result(result))
 
 
@@ -123,10 +129,11 @@ def scan(
         data = scan_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0 if result.passed else 1)
     output = format_scan(result)
     typer.echo(output)
     _maybe_write(scan_report(result), out)
+    raise typer.Exit(0 if result.passed else 1)
 
 
 @app.command()
@@ -164,10 +171,11 @@ def status(
         data = status_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0)
     output = format_status(result)
     typer.echo(output)
     _maybe_write(status_report(result), out)
+    raise typer.Exit(0)
 
 
 @app.command()
@@ -180,7 +188,9 @@ def preflight(
 ) -> None:
     """Run a fail-closed preflight governance readiness check."""
     root = _resolve_root(path)
-    result = api.preflight(root, include_authority=authority, include_portability=not no_portability)
+    result = api.preflight(
+        root, include_authority=authority, include_portability=not no_portability
+    )
 
     if json_output:
         data = preflight_to_json(result)
@@ -238,10 +248,11 @@ def registry_build(
         data = registry_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0 if result.passed else 1)
     output = format_registry(result)
     typer.echo(output)
     _maybe_write(registry_report(result), out)
+    raise typer.Exit(0 if result.passed else 1)
 
 
 @registry_app.command("verify")
@@ -249,7 +260,9 @@ def registry_verify(
     path: str = typer.Argument(".", help="Root path to verify registry for."),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
     out: Path | None = typer.Option(None, "--out", help="Write report to this file path."),
-    snapshot: Path | None = typer.Option(None, "--snapshot", help="Path to existing registry JSON snapshot."),
+    snapshot: Path | None = typer.Option(
+        None, "--snapshot", help="Path to existing registry JSON snapshot."
+    ),
 ) -> None:
     """Verify registry integrity, optionally reconciling against a snapshot."""
     root = _resolve_root(path)
@@ -285,9 +298,10 @@ def audit_readiness(
         data = audit_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0 if result.passed else 1)
     typer.echo(format_audit(result))
     _maybe_write(audit_report(result), out)
+    raise typer.Exit(0 if result.passed else 1)
 
 
 @audit_app.command("coverage")
@@ -304,9 +318,10 @@ def audit_coverage(
         data = audit_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0 if result.passed else 1)
     typer.echo(format_audit(result))
     _maybe_write(audit_report(result), out)
+    raise typer.Exit(0 if result.passed else 1)
 
 
 @audit_app.command("drift")
@@ -323,9 +338,10 @@ def audit_drift(
         data = audit_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0 if result.passed else 1)
     typer.echo(format_audit(result))
     _maybe_write(audit_report(result), out)
+    raise typer.Exit(0 if result.passed else 1)
 
 
 # ---------------------------------------------------------------------------
@@ -347,9 +363,10 @@ def discover_candidates(
         data = candidates_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0)
     typer.echo(format_candidates(result))
     _maybe_write(candidates_report(result), out)
+    raise typer.Exit(0)
 
 
 # ---------------------------------------------------------------------------
@@ -432,18 +449,23 @@ def skills_verify(
 def doctrine_validate(
     path: str = typer.Argument(".", help="Root path to validate doctrine for."),
 ) -> None:
-    """Validate that a governance doctrine file exists and is complete."""
+    """Validate that a governance doctrine pack exists and is complete."""
+    from governance_os.models.issue import Severity
+
     root = _resolve_root(path)
     issues = validate_doctrine(root)
 
+    has_errors = any(i.severity == Severity.ERROR for i in issues)
+
     if not issues:
         typer.echo("OK — doctrine file is present and non-empty.")
-        return
+        raise typer.Exit(0)
 
-    typer.echo(f"FAIL — {len(issues)} doctrine issue(s):")
+    status = "FAIL" if has_errors else "OK"
+    typer.echo(f"{status} — {len(issues)} doctrine issue(s):")
     for issue in issues:
-        typer.echo(f"  {issue}")
-    raise typer.Exit(1)
+        typer.echo(f"  [{issue.severity.upper()}] [{issue.code}] {issue.message}")
+    raise typer.Exit(1 if has_errors else 0)
 
 
 if __name__ == "__main__":

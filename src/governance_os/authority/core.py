@@ -132,7 +132,9 @@ def verify_authority(root: Path, pipelines: list[Pipeline]) -> AuthorityResult:
     return AuthorityResult(root=root, issues=issues)
 
 
-def _check_config_consistency(root: Path, config_path: Path, pipelines: list[Pipeline]) -> list[Issue]:
+def _check_config_consistency(
+    root: Path, config_path: Path, pipelines: list[Pipeline]
+) -> list[Issue]:
     """Check governance.yaml is internally consistent with repo state."""
     import yaml
 

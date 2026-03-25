@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "governance-os"
-version = "0.2.0"
+version = "0.3.0"
 description = "A governance runtime for pipeline contract management — discover, validate, and report on structured pipeline contracts in any repository."
 readme = "README.md"
 requires-python = ">=3.11"

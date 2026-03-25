@@ -7,6 +7,33 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2026-03-25
+
+### Changed
+
+- `govos scan` now exits `1` on parse errors (fail-closed); previously always exited `0`
+- `govos status` now raises an explicit `typer.Exit(0)` (reporting command, no pass/fail state)
+- `govos registry build` now exits `0`/`1` based on registry errors; previously always exited `0`
+- `govos audit readiness/coverage/drift` now exit `0`/`1` based on error-severity findings; previously always exited `0`
+- `govos discover candidates` now raises an explicit `typer.Exit(0)` (advisory command)
+- `govos doctrine validate` now uses `Issue`-based reporting (code, severity, message) consistent with all other commands
+- `validate_doctrine()` return type changed from `list[str]` to `list[Issue]`; now accepts multi-file doctrine packs (all `.md` files in `governance/doctrine/`)
+- `audit_coverage` now scans nested directories recursively (previously top-level only)
+- `_NO_DEP_TOKENS` extracted to module-level constant in `audit/core.py`; dead no-op inputs check removed
+- YAML skill files (`.yaml`/`.yml`) now extract description from `description:` or `name:` fields during skills indexing
+
+### Added
+
+- `ScanResult.passed` property — `True` when no parse errors
+- 13 integration tests covering end-to-end workflows: `init→scan→verify→preflight`, `init→registry build→snapshot reconcile`, `audit drift`, `--out` flag, `authority verify`
+
+### Fixed
+
+- Dead code removed from `audit_readiness` (unreachable `if not p.inputs: pass` block)
+- `_NO_DEP_TOKENS` was duplicated across two functions in `audit/core.py`; now a single module-level constant
+
+---
+
 ## [0.2.0] — 2026-03-25
 
 ### Added

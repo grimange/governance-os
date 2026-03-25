@@ -5,6 +5,8 @@ from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 
+from governance_os.models.issue import Issue, Severity
+
 
 def _template(name: str) -> str:
     return files("governance_os.templates").joinpath(name).read_text(encoding="utf-8")
@@ -271,22 +273,60 @@ def _apply_profile(result: ScaffoldResult, root: Path, profile: InitProfile) -> 
 # ---------------------------------------------------------------------------
 
 
-def validate_doctrine(root: Path) -> list[str]:
-    """Check that a doctrine file exists and is non-empty.
+def validate_doctrine(root: Path) -> list[Issue]:
+    """Check that a doctrine pack exists and all files are non-empty.
 
-    Returns a list of issue strings. Empty list means valid.
+    Scans governance/doctrine/ for all .md files (multi-file packs supported).
+    Returns a list of Issue objects. Empty list means valid.
     """
-    issues: list[str] = []
-    doctrine_path = root / "governance" / "doctrine" / "doctrine.md"
-    if not doctrine_path.exists():
-        issues.append(f"Doctrine file not found: {doctrine_path}")
+    issues: list[Issue] = []
+    doctrine_dir = root / "governance" / "doctrine"
+
+    if not doctrine_dir.exists():
+        issues.append(
+            Issue(
+                code="DOCTRINE_MISSING",
+                severity=Severity.ERROR,
+                message=f"Doctrine directory not found: {doctrine_dir}",
+                path=root,
+                suggestion="Create governance/doctrine/ and add at least one .md file.",
+            )
+        )
         return issues
 
-    content = doctrine_path.read_text(encoding="utf-8").strip()
-    if not content:
-        issues.append(f"Doctrine file is empty: {doctrine_path}")
-    elif len(content.splitlines()) < 3:
-        issues.append(f"Doctrine file appears incomplete (fewer than 3 lines): {doctrine_path}")
+    doctrine_files = sorted(doctrine_dir.glob("*.md"))
+    if not doctrine_files:
+        issues.append(
+            Issue(
+                code="DOCTRINE_MISSING",
+                severity=Severity.ERROR,
+                message=f"No doctrine files (.md) found in {doctrine_dir}",
+                path=doctrine_dir,
+                suggestion="Create at least one .md file in governance/doctrine/.",
+            )
+        )
+        return issues
+
+    for doc_file in doctrine_files:
+        content = doc_file.read_text(encoding="utf-8").strip()
+        if not content:
+            issues.append(
+                Issue(
+                    code="DOCTRINE_EMPTY",
+                    severity=Severity.WARNING,
+                    message=f"Doctrine file is empty: {doc_file.name}",
+                    path=doc_file,
+                )
+            )
+        elif len(content.splitlines()) < 3:
+            issues.append(
+                Issue(
+                    code="DOCTRINE_INCOMPLETE",
+                    severity=Severity.WARNING,
+                    message=f"Doctrine file appears incomplete (fewer than 3 lines): {doc_file.name}",
+                    path=doc_file,
+                )
+            )
 
     return issues
 

@@ -1,7 +1,5 @@
 """Tests for extended init levels and profiles."""
 
-
-
 from governance_os.scaffolding.init import format_result, init_repo, validate_doctrine
 
 
@@ -73,7 +71,7 @@ def test_format_result_includes_level_profile(tmp_path):
 def test_validate_doctrine_missing(tmp_path):
     issues = validate_doctrine(tmp_path)
     assert len(issues) == 1
-    assert "not found" in issues[0]
+    assert "not found" in issues[0].message
 
 
 def test_validate_doctrine_present(tmp_path):
@@ -89,4 +87,17 @@ def test_validate_doctrine_empty(tmp_path):
     doctrine_path.parent.mkdir(parents=True)
     doctrine_path.write_text("", encoding="utf-8")
     issues = validate_doctrine(tmp_path)
-    assert any("empty" in i for i in issues)
+    assert any("empty" in i.message for i in issues)
+
+
+def test_validate_doctrine_multi_file(tmp_path):
+    doctrine_dir = tmp_path / "governance" / "doctrine"
+    doctrine_dir.mkdir(parents=True)
+    (doctrine_dir / "principles.md").write_text(
+        "# Principles\n\n1. Clarity.\n2. Scope.\n", encoding="utf-8"
+    )
+    (doctrine_dir / "authority.md").write_text(
+        "# Authority\n\nSource of truth is repo.\n", encoding="utf-8"
+    )
+    issues = validate_doctrine(tmp_path)
+    assert not issues
