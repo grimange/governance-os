@@ -1,11 +1,25 @@
 """governance-os CLI — thin command layer, all logic lives in modules."""
 
 from pathlib import Path
+from typing import Optional
 
 import typer
 
-import governance_os.discovery as discovery_mod
-from governance_os.scaffold import format_result, init_repo
+import governance_os.api as api
+from governance_os.reporting.console import (
+    format_portability,
+    format_scan,
+    format_status,
+    format_verify,
+)
+from governance_os.reporting.json_report import (
+    portability_to_json,
+    scan_to_json,
+    status_to_json,
+    to_json_str,
+    verify_to_json,
+)
+from governance_os.scaffolding.init import format_result, init_repo
 
 app = typer.Typer(
     name="govos",
@@ -33,35 +47,63 @@ def init(
 @app.command()
 def scan(
     path: str = typer.Argument(".", help="Root path to scan for pipeline contracts."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Discover and parse pipeline contracts."""
     root = _resolve_root(path)
-    result = discovery_mod.discover(root)
-    typer.echo(discovery_mod.format_result(result, root))
+    result = api.scan(root)
+
+    if json_output:
+        typer.echo(to_json_str(scan_to_json(result)))
+        return
+    typer.echo(format_scan(result))
 
 
 @app.command()
 def verify(
     path: str = typer.Argument(".", help="Root path to validate pipeline contracts."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Validate pipeline contracts and dependency graph."""
-    typer.echo(f"[govos verify] Not yet implemented. Target: {path}")
+    root = _resolve_root(path)
+    result = api.verify(root)
+
+    if json_output:
+        typer.echo(to_json_str(verify_to_json(result)))
+        raise typer.Exit(0 if result.passed else 1)
+    typer.echo(format_verify(result))
+    raise typer.Exit(0 if result.passed else 1)
 
 
 @app.command()
 def status(
     path: str = typer.Argument(".", help="Root path to report pipeline status."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Report the status of all pipeline contracts."""
-    typer.echo(f"[govos status] Not yet implemented. Target: {path}")
+    root = _resolve_root(path)
+    result = api.status(root)
+
+    if json_output:
+        typer.echo(to_json_str(status_to_json(result)))
+        return
+    typer.echo(format_status(result))
 
 
 @portability_app.command("scan")
 def portability_scan(
     path: str = typer.Argument(".", help="Root path to scan for portability issues."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ) -> None:
     """Scan pipeline contracts for portability issues."""
-    typer.echo(f"[govos portability scan] Not yet implemented. Target: {path}")
+    root = _resolve_root(path)
+    result = api.portability(root)
+
+    if json_output:
+        typer.echo(to_json_str(portability_to_json(result)))
+        raise typer.Exit(0 if result.passed else 1)
+    typer.echo(format_portability(result))
+    raise typer.Exit(0 if result.passed else 1)
 
 
 if __name__ == "__main__":

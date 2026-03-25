@@ -1,26 +1,28 @@
-"""Tests for governance_os.scaffold."""
+"""Tests for governance_os.scaffolding.init."""
 
 from pathlib import Path
 
-from governance_os.scaffold import ScaffoldResult, format_result, init_repo
+from governance_os.scaffolding.init import ScaffoldResult, format_result, init_repo
 
 
 def test_init_creates_directories(tmp_path: Path) -> None:
-    """init_repo creates pipelines/ and docs/ directories."""
+    """init_repo creates the standard governance directory layout."""
     result = init_repo(tmp_path)
-    assert (tmp_path / "pipelines").is_dir()
-    assert (tmp_path / "docs").is_dir()
-    assert tmp_path / "pipelines" in result.created_dirs
-    assert tmp_path / "docs" in result.created_dirs
+    assert (tmp_path / "governance" / "pipelines").is_dir()
+    assert (tmp_path / "docs" / "governance").is_dir()
+    assert (tmp_path / "artifacts").is_dir()
+    assert tmp_path / "governance" / "pipelines" in result.created_dirs
+    assert tmp_path / "docs" / "governance" in result.created_dirs
+    assert tmp_path / "artifacts" in result.created_dirs
 
 
 def test_init_creates_files(tmp_path: Path) -> None:
-    """init_repo creates governance.yaml and example contract."""
+    """init_repo creates governance.yaml and starter files."""
     result = init_repo(tmp_path)
     assert (tmp_path / "governance.yaml").exists()
-    assert (tmp_path / "pipelines" / "001-example.md").exists()
+    assert (tmp_path / "governance" / "pipelines" / "001--example.md").exists()
+    assert (tmp_path / "docs" / "governance" / "README.governance.md").exists()
     assert tmp_path / "governance.yaml" in result.created_files
-    assert tmp_path / "pipelines" / "001-example.md" in result.created_files
 
 
 def test_init_skips_existing_files(tmp_path: Path) -> None:
@@ -32,7 +34,6 @@ def test_init_skips_existing_files(tmp_path: Path) -> None:
 
     assert existing in result.skipped_files
     assert existing not in result.created_files
-    # Content must not be overwritten
     assert existing.read_text(encoding="utf-8") == "# my config"
 
 
@@ -40,7 +41,7 @@ def test_init_idempotent(tmp_path: Path) -> None:
     """Running init_repo twice does not fail and skips existing artefacts."""
     init_repo(tmp_path)
     result2 = init_repo(tmp_path)
-    assert not result2.created_dirs   # dirs already existed
+    assert not result2.created_dirs
     assert not result2.created_files
     assert result2.skipped_files
 
@@ -75,10 +76,12 @@ def test_governance_yaml_content(tmp_path: Path) -> None:
     assert "contracts_glob" in content
 
 
-def test_example_contract_content(tmp_path: Path) -> None:
-    """Created example contract is valid markdown with an H1."""
+def test_example_pipeline_content(tmp_path: Path) -> None:
+    """Created example pipeline is valid markdown with required sections."""
     init_repo(tmp_path)
-    content = (tmp_path / "pipelines" / "001-example.md").read_text(encoding="utf-8")
+    content = (tmp_path / "governance" / "pipelines" / "001--example.md").read_text(
+        encoding="utf-8"
+    )
     assert content.startswith("# ")
     assert "Stage:" in content
     assert "Depends on:" in content

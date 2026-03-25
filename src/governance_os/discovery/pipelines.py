@@ -1,13 +1,14 @@
 """Pipeline contract discovery for governance-os.
 
-Scans a directory tree for markdown files that match the configured
-contracts_glob pattern and returns their paths sorted for stable ordering.
+Scans the configured pipelines directory for markdown files and returns
+their paths sorted for stable ordering.
 """
 
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from governance_os.config import GovernanceConfig, load_config, resolve_pipelines_dir
+from governance_os.config import GovernanceConfig, load_config
+from governance_os.discovery.repo import get_pipelines_dir
 
 
 @dataclass
@@ -32,7 +33,7 @@ def discover(root: Path, config: GovernanceConfig | None = None) -> DiscoveryRes
     if config is None:
         config = load_config(root)
 
-    pipelines_dir = resolve_pipelines_dir(root, config)
+    pipelines_dir = get_pipelines_dir(root, config)
 
     if not pipelines_dir.exists():
         return DiscoveryResult(pipelines_dir=pipelines_dir, missing_dir=True)
@@ -64,7 +65,10 @@ def format_result(result: DiscoveryResult, root: Path) -> str:
     if not result.contracts:
         return f"No contracts found in: {result.pipelines_dir}"
 
-    lines = [f"Found {len(result.contracts)} contract(s) in {result.pipelines_dir.relative_to(root)}:"]
+    lines = [
+        f"Found {len(result.contracts)} contract(s)"
+        f" in {result.pipelines_dir.relative_to(root)}:"
+    ]
     for contract in result.contracts:
         lines.append(f"  {contract.relative_to(root)}")
     return "\n".join(lines)

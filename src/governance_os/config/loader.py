@@ -1,4 +1,4 @@
-"""Configuration loading for governance-os.
+"""Config loader for governance-os.
 
 Reads governance.yaml from the repo root. Falls back to defaults
 if the file is absent so the package works without any config file.
@@ -7,27 +7,8 @@ if the file is absent so the package works without any config file.
 from pathlib import Path
 
 import yaml
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-class GovernanceConfig(BaseSettings):
-    """Runtime configuration for governance-os."""
-
-    model_config = SettingsConfigDict(extra="ignore")
-
-    # Directory (relative to repo root) containing pipeline contracts.
-    pipelines_dir: str = "pipelines"
-
-    # Glob pattern used when scanning pipelines_dir for contract files.
-    contracts_glob: str = "**/*.md"
-
-    @field_validator("pipelines_dir", "contracts_glob")
-    @classmethod
-    def must_be_non_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("must not be empty")
-        return v
+from governance_os.config.models import GovernanceConfig
 
 
 def load_config(root: Path | None = None) -> GovernanceConfig:
