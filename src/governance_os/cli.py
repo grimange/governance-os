@@ -13,6 +13,7 @@ from governance_os.reporting.console import (
     format_preflight,
     format_registry,
     format_scan,
+    format_score,
     format_skills,
     format_status,
     format_verify,
@@ -25,6 +26,7 @@ from governance_os.reporting.json_report import (
     preflight_to_json,
     registry_to_json,
     scan_to_json,
+    score_to_json,
     skills_to_json,
     status_to_json,
     to_json_str,
@@ -38,6 +40,7 @@ from governance_os.reporting.markdown import (
     preflight_report,
     registry_report,
     scan_report,
+    score_report,
     skills_report,
     status_report,
     verify_report,
@@ -201,6 +204,42 @@ def preflight(
     typer.echo(output)
     _maybe_write(preflight_report(result), out)
     raise typer.Exit(0 if result.passed else 1)
+
+
+# ---------------------------------------------------------------------------
+# Score command (v0.4 intelligence layer)
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def score(
+    path: str = typer.Argument(".", help="Root path to score."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
+    out: Path | None = typer.Option(None, "--out", help="Write report to this file path."),
+    compare: Path | None = typer.Option(
+        None, "--compare", help="Path to a previous score JSON report for delta comparison."
+    ),
+    explain: bool = typer.Option(
+        False, "--explain", help="Include scoring formula explanation in output."
+    ),
+) -> None:
+    """Compute an explainable governance score for the repository.
+
+    Scores five categories: integrity, readiness, coverage, drift, authority.
+    Each category starts at 100; errors deduct 25 pts, warnings deduct 10 pts.
+    Overall score is the mean of all category scores.
+    """
+    root = _resolve_root(path)
+    result = api.score(root, compare_path=compare)
+
+    if json_output:
+        data = score_to_json(result)
+        typer.echo(to_json_str(data))
+        _maybe_write_json(data, out)
+        raise typer.Exit(0)
+    typer.echo(format_score(result, explain=explain))
+    _maybe_write(score_report(result, explain=explain), out)
+    raise typer.Exit(0)
 
 
 # ---------------------------------------------------------------------------

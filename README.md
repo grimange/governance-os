@@ -24,6 +24,7 @@ The runtime provides:
 - **Candidate discovery** — finds uncontracted pipeline-like directories
 - **Skills index** — indexes and validates reusable skill references
 - **Init profiles and levels** — scaffold governance at different maturity levels
+- **Governance scoring** — explainable score across five categories with prioritized findings, cross-signal insights, and optional trend comparison (v0.4)
 
 ---
 
@@ -310,6 +311,85 @@ Validates that a governance doctrine file exists at `governance/doctrine/doctrin
 
 ---
 
+### `govos score [PATH] [--json] [--out PATH] [--compare PATH] [--explain]`
+
+Computes an explainable governance score by running all checks and combining their findings.
+
+**Categories scored:**
+
+| Category | Source checks |
+|---|---|
+| `integrity` | parse errors, schema validation, integrity, dependency graph, portability |
+| `readiness` | audit readiness (purpose, scope, success criteria, implementation notes) |
+| `coverage` | audit coverage (uncontracted pipeline surfaces) |
+| `drift` | audit drift (missing declared output artifacts) |
+| `authority` | authority validation issues |
+
+**Scoring formula:**
+
+Each category starts at 100. Deductions are applied per finding:
+- Error: -25 points each
+- Warning: -10 points each
+- Info findings: not scored
+
+Score floors at 0. Overall score is the mean of all category scores (rounded).
+
+**Grade bands:**
+
+| Score | Grade |
+|---|---|
+| 90–100 | A |
+| 75–89 | B |
+| 60–74 | C |
+| 40–59 | D |
+| 0–39 | F |
+
+**Options:**
+
+- `--compare PATH` — provide a path to a previous `govos score --json` output to see a delta summary
+- `--explain` — include the formula explanation in the output
+
+**Sample console output:**
+
+```
+Score: 72/100  Grade: C
+  integrity: 50/100  (2 errors × 25 = -50 pts)
+  readiness: 80/100  (2 warnings × 10 = -20 pts)
+  coverage: 90/100  (1 warning × 10 = -10 pts)
+  drift: 100/100
+  authority: 40/100  (1 error × 25 = -25 pts; 3 warnings × 10 = -30 pts)
+
+2 derived insight(s):
+  [HIGH] Contract quality gap: multiple documentation deficiencies in same pipeline(s)
+    Pipeline(s) ['001'] each have 2 or more documentation quality issues. ...
+  [MEDIUM] Contract candidates available for uncontracted surfaces
+    Coverage gaps (AUDIT_UNCONTRACTED_SURFACE) were found alongside 2 candidate(s). ...
+
+Findings: 4 high, 6 medium, 2 low
+  [HIGH] [MISSING_REQUIRED_FIELD] Pipeline '001' is missing required field: title.
+  ...
+```
+
+**Derived insights** are cross-signal conclusions drawn from combining multiple findings:
+
+| Code | Trigger | Priority |
+|---|---|---|
+| `INSIGHT_CANDIDATE_READY` | `AUDIT_UNCONTRACTED_SURFACE` + candidates discovered | medium |
+| `INSIGHT_PIPELINE_INCONSISTENCY` | `AUDIT_MISSING_OUTPUT` + `REGISTRY_STALE_ENTRY` on same pipeline | high |
+| `INSIGHT_GOVERNANCE_BREAKDOWN` | `AUTHORITY_MISSING_ROOT` + `MISSING_REQUIRED_FIELD` | high |
+| `INSIGHT_CONTRACT_QUALITY_GAP` | 2+ documentation issues on same pipeline | medium |
+| `INSIGHT_GRAPH_INTEGRITY_FAILURE` | `DEPENDENCY_CYCLE` + `UNRESOLVED_DEPENDENCY` | high |
+
+**Limitations:**
+
+- The score is not a certification or compliance indicator. It is a structured summary of current findings.
+- Scores are reproducible given the same repository state. They do not drift between runs unless findings change.
+- Category weights are equal (simple mean). No hidden weighting.
+- Delta comparison requires a previous score report saved with `--json --out`. Non-score JSON files are rejected.
+- Insights are pattern-matched, not inferred. They can only trigger on known code combinations.
+
+---
+
 ## Python API
 
 ```python
@@ -339,6 +419,10 @@ authority        = api.authority_verify(root)         # AuthorityResult
 # Phase 3 — Optional
 skills           = api.skills_index(root)    # SkillsResult
 skills_v         = api.skills_verify(root)   # SkillsResult
+
+# v0.4 — Intelligence
+score_result     = api.score(root)                          # ScoreResult
+score_with_delta = api.score(root, compare_path=Path("prev.json"))  # ScoreResult with delta
 ```
 
 All functions return typed Pydantic models. See `src/governance_os/models/` for full model definitions.

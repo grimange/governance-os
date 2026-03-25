@@ -17,9 +17,19 @@ from governance_os.discovery.candidates import CandidateResult, discover_candida
 from governance_os.discovery.pipelines import discover
 from governance_os.graph.analysis import detect_cycles
 from governance_os.graph.builder import build_graph
+from governance_os.intelligence.comparison import compute_deltas
+from governance_os.intelligence.insights import derive_insights
+from governance_os.intelligence.priority import sort_by_priority
+from governance_os.intelligence.scoring import (
+    FORMULA_EXPLANATION,
+    grade,
+    overall_score,
+    score_category,
+)
 from governance_os.models.issue import Issue, Severity
 from governance_os.models.pipeline import Pipeline
 from governance_os.models.result import PortabilityResult, ScanResult, VerifyResult
+from governance_os.models.score import PrioritizedFinding, ScoreResult
 from governance_os.models.status import StatusResult
 from governance_os.parsing.filenames import parse_filenames
 from governance_os.parsing.markdown_contract import ParseIssue, parse_contract
@@ -439,3 +449,133 @@ def skills_verify(root: Path | str) -> SkillsResult:
         SkillsResult with validation findings.
     """
     return verify_skills(Path(root))
+
+
+# ---------------------------------------------------------------------------
+# Public API — score command (v0.4 intelligence layer)
+# ---------------------------------------------------------------------------
+
+
+def score(
+    root: Path | str,
+    config: GovernanceConfig | None = None,
+    compare_path: Path | None = None,
+) -> ScoreResult:
+    """Compute an explainable governance score for the repository.
+
+    Runs all governance checks, scores them by category, prioritizes findings,
+    derives cross-signal insights, and optionally computes deltas vs. a
+    previous score report.
+
+    Scoring formula (fully transparent):
+        Per category: start=100, error=-25 each, warning=-10 each,
+        info=not scored, floor=0.
+        Overall = mean of all category scores (rounded).
+
+    Categories:
+        integrity  — parse errors, schema, integrity, graph, portability
+        readiness  — audit readiness findings
+        coverage   — audit coverage findings
+        drift      — audit drift findings
+        authority  — authority validation issues
+
+    Args:
+        root: Repo root directory.
+        config: Optional pre-loaded config.
+        compare_path: Optional path to a previous score JSON report for delta.
+
+    Returns:
+        ScoreResult with score, prioritized findings, insights, and optional delta.
+    """
+    root = Path(root)
+    if config is None:
+        config = load_config(root)
+
+    # ------------------------------------------------------------------
+    # Collect findings per category (single pipeline load pass)
+    # ------------------------------------------------------------------
+    pipelines, parse_errors = _load_pipelines(root, config)
+
+    # integrity: parse + schema + integrity + graph + portability
+    schema_issues = validate_pipelines(pipelines)
+    integrity_issues = validate_integrity(pipelines)
+    graph, graph_issues = build_graph(pipelines)
+    cycle_issues = detect_cycles(graph)
+    port_issues = scan_pipelines(pipelines)
+    integrity_findings = parse_errors + schema_issues + integrity_issues + graph_issues + cycle_issues + port_issues
+
+    # readiness
+    readiness_result = audit_readiness(root, pipelines)
+    readiness_findings = [
+        f for f in readiness_result.findings if f.code != "AUDIT_NO_PIPELINES"
+    ]
+
+    # coverage
+    pipelines_dir = resolve_pipelines_dir(root, config)
+    coverage_result = audit_coverage(root, pipelines, pipelines_dir)
+    coverage_findings = [
+        f for f in coverage_result.findings if f.code != "AUDIT_NO_SURFACES_FOUND"
+    ]
+
+    # drift
+    drift_result = audit_drift(root, pipelines)
+    drift_findings = [
+        f for f in drift_result.findings if f.code != "AUDIT_NO_DRIFT"
+    ]
+
+    # authority
+    auth_result = verify_authority(root, pipelines)
+    authority_findings = list(auth_result.issues)
+
+    # ------------------------------------------------------------------
+    # Score each category
+    # ------------------------------------------------------------------
+    categories = [
+        score_category("integrity", integrity_findings),
+        score_category("readiness", readiness_findings),
+        score_category("coverage", coverage_findings),
+        score_category("drift", drift_findings),
+        score_category("authority", authority_findings),
+    ]
+
+    total = overall_score(categories)
+
+    # ------------------------------------------------------------------
+    # Prioritize all findings (combined)
+    # ------------------------------------------------------------------
+    all_findings = (
+        integrity_findings
+        + readiness_findings
+        + coverage_findings
+        + drift_findings
+        + authority_findings
+    )
+    prioritized = sort_by_priority(all_findings)
+    prioritized_findings = [
+        PrioritizedFinding.from_issue(priority.value, issue)
+        for priority, issue in prioritized
+    ]
+
+    # ------------------------------------------------------------------
+    # Cross-signal insights
+    # ------------------------------------------------------------------
+    candidate_result = discover_candidates(root, pipelines)
+    insights = derive_insights(all_findings, candidate_count=candidate_result.candidate_count)
+
+    # ------------------------------------------------------------------
+    # Delta comparison (optional)
+    # ------------------------------------------------------------------
+    deltas = []
+    if compare_path is not None:
+        deltas = compute_deltas(total, categories, compare_path)
+
+    return ScoreResult(
+        root=root,
+        overall_score=total,
+        grade=grade(total),
+        categories=categories,
+        prioritized_findings=prioritized_findings,
+        derived_insights=insights,
+        delta=deltas,
+        formula_explanation=FORMULA_EXPLANATION,
+    )

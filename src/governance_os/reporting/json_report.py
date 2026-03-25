@@ -16,6 +16,7 @@ from governance_os.discovery.candidates import CandidateResult
 from governance_os.models.issue import Issue
 from governance_os.models.pipeline import Pipeline
 from governance_os.models.result import PortabilityResult, ScanResult, VerifyResult
+from governance_os.models.score import ScoreResult
 from governance_os.models.status import StatusRecord, StatusResult
 from governance_os.preflight.core import PreflightResult
 from governance_os.registry.core import RegistryEntry, RegistryResult
@@ -214,6 +215,67 @@ def skills_to_json(result: SkillsResult) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Rendering helper
 # ---------------------------------------------------------------------------
+
+
+def score_to_json(result: ScoreResult) -> dict[str, Any]:
+    categories = [
+        {
+            "name": c.name,
+            "score": c.score,
+            "finding_count": c.finding_count,
+            "error_count": c.error_count,
+            "warning_count": c.warning_count,
+            "info_count": c.info_count,
+            "deductions": c.deductions,
+        }
+        for c in result.categories
+    ]
+
+    prioritized = [
+        {
+            "priority": f.priority,
+            "code": f.code,
+            "severity": f.severity,
+            "message": f.message,
+            "path": f.path,
+            "pipeline_id": f.pipeline_id,
+            "suggestion": f.suggestion,
+        }
+        for f in result.prioritized_findings
+    ]
+
+    insights = [
+        {
+            "code": i.code,
+            "title": i.title,
+            "explanation": i.explanation,
+            "priority": i.priority,
+            "related_findings": i.related_findings,
+        }
+        for i in result.derived_insights
+    ]
+
+    delta = [
+        {
+            "category": d.category,
+            "previous_score": d.previous_score,
+            "current_score": d.current_score,
+            "change": d.change,
+        }
+        for d in result.delta
+    ]
+
+    return {
+        "command": "score",
+        "root": str(result.root),
+        "overall_score": result.overall_score,
+        "grade": result.grade,
+        "formula": result.formula_explanation,
+        "categories": categories,
+        "prioritized_findings": prioritized,
+        "derived_insights": insights,
+        "delta": delta,
+    }
 
 
 def to_json_str(data: dict[str, Any], *, indent: int = 2) -> str:

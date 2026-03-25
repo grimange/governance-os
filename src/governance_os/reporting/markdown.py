@@ -12,6 +12,7 @@ from governance_os.audit.core import AuditResult
 from governance_os.authority.core import AuthorityResult
 from governance_os.discovery.candidates import CandidateResult
 from governance_os.models.result import PortabilityResult, ScanResult, VerifyResult
+from governance_os.models.score import ScoreResult
 from governance_os.models.status import PipelineStatus, StatusResult
 from governance_os.preflight.core import PreflightResult
 from governance_os.registry.core import RegistryResult
@@ -317,6 +318,87 @@ def skills_report(result: SkillsResult) -> str:
         ]
         for i in result.issues:
             lines.append(f"| {i.severity.value} | `{i.code}` | {i.message} |")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def score_report(result: ScoreResult, explain: bool = False) -> str:
+    lines: list[str] = [
+        "# Governance Score Report",
+        "",
+        f"**Root:** `{result.root}`  ",
+        f"**Overall Score:** {result.overall_score}/100 (Grade: {result.grade})",
+        "",
+    ]
+
+    if explain:
+        lines += [
+            "## Scoring Formula",
+            "",
+            f"> {result.formula_explanation}",
+            "",
+        ]
+
+    # Category scores table
+    lines += [
+        "## Category Scores",
+        "",
+        "| Category | Score | Errors | Warnings | Infos | Deductions |",
+        "|---|---|---|---|---|---|",
+    ]
+    for c in result.categories:
+        ded = "; ".join(c.deductions) if c.deductions else "none"
+        lines.append(
+            f"| {c.name} | {c.score}/100 | {c.error_count} | {c.warning_count} | {c.info_count} | {ded} |"
+        )
+    lines.append("")
+
+    # Derived insights
+    if result.derived_insights:
+        lines += [
+            "## Derived Insights",
+            "",
+        ]
+        for i in result.derived_insights:
+            lines += [
+                f"### [{i.priority.upper()}] {i.title}",
+                "",
+                f"**Code:** `{i.code}`  ",
+                f"**Related findings:** {', '.join(f'`{c}`' for c in i.related_findings)}",
+                "",
+                i.explanation,
+                "",
+            ]
+
+    # Prioritized findings
+    if result.prioritized_findings:
+        lines += [
+            "## Prioritized Findings",
+            "",
+            "| Priority | Severity | Code | Message | Suggestion |",
+            "|---|---|---|---|---|",
+        ]
+        for f in result.prioritized_findings:
+            suggestion = f.suggestion or ""
+            lines.append(
+                f"| {f.priority} | {f.severity} | `{f.code}` | {f.message} | {suggestion} |"
+            )
+        lines.append("")
+
+    # Delta summary
+    if result.delta:
+        lines += [
+            "## Delta Summary",
+            "",
+            "| Category | Previous | Current | Change |",
+            "|---|---|---|---|",
+        ]
+        for d in result.delta:
+            sign = "+" if d.change > 0 else ""
+            lines.append(
+                f"| {d.category} | {d.previous_score} | {d.current_score} | {sign}{d.change} |"
+            )
         lines.append("")
 
     return "\n".join(lines)

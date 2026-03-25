@@ -11,6 +11,7 @@ from governance_os.audit.core import AuditResult
 from governance_os.authority.core import AuthorityResult
 from governance_os.discovery.candidates import CandidateResult
 from governance_os.models.result import PortabilityResult, ScanResult, VerifyResult
+from governance_os.models.score import ScoreResult
 from governance_os.models.status import StatusResult
 from governance_os.preflight.core import PreflightResult
 from governance_os.registry.core import RegistryResult
@@ -118,6 +119,45 @@ def format_candidates(result: CandidateResult) -> str:
         id_str = f"[{c.suggested_id}]" if c.suggested_id else "[?]"
         lines.append(f"  {id_str} {rel}  confidence={c.confidence}")
         lines.append(f"    {c.reason}")
+    return "\n".join(lines)
+
+
+def format_score(result: ScoreResult, explain: bool = False) -> str:
+    lines = [f"Score: {result.overall_score}/100  Grade: {result.grade}"]
+
+    for c in result.categories:
+        ded = f"  ({'; '.join(c.deductions)})" if c.deductions else ""
+        lines.append(f"  {c.name}: {c.score}/100{ded}")
+
+    if explain:
+        lines += ["", f"Formula: {result.formula_explanation}"]
+
+    if result.derived_insights:
+        lines.append(f"\n{len(result.derived_insights)} derived insight(s):")
+        for i in result.derived_insights:
+            lines.append(f"  [{i.priority.upper()}] {i.title}")
+            lines.append(f"    {i.explanation}")
+
+    high = [f for f in result.prioritized_findings if f.priority == "high"]
+    medium = [f for f in result.prioritized_findings if f.priority == "medium"]
+    low = [f for f in result.prioritized_findings if f.priority == "low"]
+
+    if result.prioritized_findings:
+        lines.append(
+            f"\nFindings: {len(high)} high, {len(medium)} medium, {len(low)} low"
+        )
+        for f in result.prioritized_findings:
+            suggestion = f"  -> {f.suggestion}" if f.suggestion else ""
+            lines.append(f"  [{f.priority.upper()}] [{f.code}] {f.message}{suggestion}")
+
+    if result.delta:
+        lines.append("\nDelta vs previous:")
+        for d in result.delta:
+            sign = "+" if d.change > 0 else ""
+            lines.append(
+                f"  {d.category}: {d.previous_score} -> {d.current_score} ({sign}{d.change})"
+            )
+
     return "\n".join(lines)
 
 
