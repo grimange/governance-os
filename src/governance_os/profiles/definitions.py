@@ -35,6 +35,7 @@ class ProfileDefinition:
     expected_surfaces: tuple[str, ...] = field(default_factory=tuple)
     optional_surfaces: tuple[str, ...] = field(default_factory=tuple)
     scaffold_groups: tuple[str, ...] = field(default_factory=tuple)
+    supported_templates: tuple[str, ...] = field(default_factory=tuple)
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +62,7 @@ GENERIC = ProfileDefinition(
         "docs/governance",
     ),
     scaffold_groups=("common",),
+    supported_templates=("minimal", "governed"),
 )
 
 CODEX = ProfileDefinition(
@@ -85,4 +87,5 @@ CODEX = ProfileDefinition(
         "docs/governance",
     ),
     scaffold_groups=("common", "codex"),
+    supported_templates=("minimal", "governed"),
 )

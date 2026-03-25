@@ -28,6 +28,9 @@ class InitProfile(StrEnum):
     CODEX = "codex"
 
 
+# Valid template names for the --template flag (subset of InitLevel, excludes "standard")
+VALID_TEMPLATES = frozenset({"minimal", "governed"})
+
 # ---------------------------------------------------------------------------
 # Example pipeline template
 # ---------------------------------------------------------------------------
@@ -124,7 +127,7 @@ This repository uses governance-os for pipeline contract management.
 - Governance config: `governance.yaml`
 - Session contracts: `governance/sessions/`
 
-## Rules for Codex
+## Rules
 
 1. Do not modify pipeline contracts without explicit authorization.
 2. All pipeline outputs must be declared in the contract.
@@ -142,6 +145,37 @@ govos profile validate # check repo conforms to active profile
 ```
 """
 
+# .codex/config.toml — written for all codex templates
+_CODEX_CONFIG_TOML = """\
+# .codex/config.toml — Codex governance profile configuration
+
+[governance]
+profile = "codex"
+contracts = "governance/pipelines"
+artifacts = "artifacts"
+
+[preflight]
+enabled = true
+"""
+
+# governance/skills/govos-preflight.skill.md — written for codex:governed only
+_CODEX_PREFLIGHT_SKILL = """\
+# Skill: govos-preflight
+
+**Trigger:** Before governance-affecting changes
+
+## Steps
+
+1. Run `govos preflight` at repo root.
+2. Resolve all ERROR issues before continuing.
+3. Document preflight status in session contract if applicable.
+
+## Pass Criteria
+
+- `govos preflight` exits 0
+- No unresolved ERROR issues
+"""
+
 _DOCTRINE_TEMPLATE = """\
 # Governance Doctrine
 
@@ -157,6 +191,44 @@ _DOCTRINE_TEMPLATE = """\
 
 
 # ---------------------------------------------------------------------------
+# governance.yaml content generation
+# ---------------------------------------------------------------------------
+
+
+def _governance_yaml(profile: str, governed: bool) -> str:
+    """Generate governance.yaml content for the given profile and structure level.
+
+    Args:
+        profile: Profile identifier ("generic" or "codex").
+        governed: True for governed-level content (authority, registry, audit sections).
+
+    Returns:
+        YAML string suitable for writing to governance.yaml.
+    """
+    lines = [
+        "# governance-os configuration",
+        "pipelines_dir: governance/pipelines",
+        'contracts_glob: "**/*.md"',
+        f"profile: {profile}",
+    ]
+    if governed:
+        lines += [
+            "",
+            "authority:",
+            "  required_roots:",
+            "    - governance.yaml",
+            "    - governance/pipelines/",
+            "",
+            "registry:",
+            "  snapshot_path: artifacts/governance/registry.json",
+            "",
+            "audit:",
+            "  enabled: true",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Scaffold result
 # ---------------------------------------------------------------------------
 
@@ -168,6 +240,7 @@ class ScaffoldResult:
     root: Path
     level: str = "standard"
     profile: str = "generic"
+    template: str = ""
     created_dirs: list[Path] = field(default_factory=list)
     created_files: list[Path] = field(default_factory=list)
     skipped_files: list[Path] = field(default_factory=list)
@@ -198,6 +271,7 @@ def init_repo(
     level: str = "standard",
     profile: str = "generic",
     with_doctrine: bool = False,
+    template: str | None = None,
 ) -> ScaffoldResult:
     """Initialize a governance-os repo at *root*.
 
@@ -207,15 +281,31 @@ def init_repo(
     Args:
         root: Target directory (created if it does not exist).
         level: Governance maturity level — "minimal", "standard", or "governed".
+            Legacy parameter; use *template* for new code.
         profile: Optional profile — "generic" (default) or "codex".
         with_doctrine: If True, scaffold an optional doctrine file.
+        template: Template name — "minimal" or "governed". Takes precedence over
+            *level* when provided. Invalid template values raise ValueError.
 
     Returns:
         ScaffoldResult describing what was created or skipped.
+
+    Raises:
+        ValueError: If *template* is given but not in VALID_TEMPLATES.
     """
-    # Normalise and validate
+    # Resolve effective level: template takes precedence over level
+    if template is not None:
+        if template not in VALID_TEMPLATES:
+            raise ValueError(
+                f"Invalid template: {template!r}. "
+                f"Supported templates: {', '.join(sorted(VALID_TEMPLATES))}"
+            )
+        effective_level = template
+    else:
+        effective_level = level
+
     try:
-        init_level = InitLevel(level)
+        init_level = InitLevel(effective_level)
     except ValueError:
         init_level = InitLevel.STANDARD
 
@@ -224,14 +314,25 @@ def init_repo(
     except ValueError:
         init_profile = InitProfile.GENERIC
 
-    result = ScaffoldResult(root=root, level=init_level.value, profile=init_profile.value)
+    effective_template = template or effective_level
+
+    result = ScaffoldResult(
+        root=root,
+        level=init_level.value,
+        profile=init_profile.value,
+        template=effective_template,
+    )
+
+    # Decide governance.yaml content upfront (profile + governed flag)
+    is_governed = init_level == InitLevel.GOVERNED
+    gov_yaml_content = _governance_yaml(init_profile.value, governed=is_governed)
 
     # ------------------------------------------------------------------
     # MINIMAL — absolute minimum governance structure
     # ------------------------------------------------------------------
     _create_dir(result, root / "governance" / "pipelines")
     _create_dir(result, root / "artifacts")
-    _write_file(result, root / "governance.yaml", _template("governance.yaml"))
+    _write_file(result, root / "governance.yaml", gov_yaml_content)
     _write_file(
         result,
         root / "governance" / "pipelines" / "001--example.md",
@@ -239,6 +340,7 @@ def init_repo(
     )
 
     if init_level == InitLevel.MINIMAL:
+        _apply_profile(result, root, init_profile, init_level)
         return result
 
     # ------------------------------------------------------------------
@@ -252,7 +354,7 @@ def init_repo(
     )
 
     if init_level == InitLevel.STANDARD and not with_doctrine:
-        _apply_profile(result, root, init_profile)
+        _apply_profile(result, root, init_profile, init_level)
         return result
 
     # ------------------------------------------------------------------
@@ -261,12 +363,6 @@ def init_repo(
     _create_dir(result, root / "artifacts" / "governance")
     _create_dir(result, root / "governance" / "skills")
 
-    # Governed config
-    _write_file(
-        result,
-        root / "governance.yaml",  # already written above; this will skip if exists
-        _template("governance-governed.yaml"),
-    )
     _write_file(
         result,
         root / "docs" / "governance" / "README.governance.md",
@@ -282,24 +378,43 @@ def init_repo(
             _DOCTRINE_TEMPLATE,
         )
 
-    _apply_profile(result, root, init_profile)
+    _apply_profile(result, root, init_profile, init_level)
     return result
 
 
-def _apply_profile(result: ScaffoldResult, root: Path, profile: InitProfile) -> None:
-    """Apply optional profile-specific assets."""
+def _apply_profile(
+    result: ScaffoldResult,
+    root: Path,
+    profile: InitProfile,
+    level: InitLevel,
+) -> None:
+    """Apply profile-specific scaffold assets.
+
+    Args:
+        result: ScaffoldResult to track created/skipped files.
+        root: Repo root directory.
+        profile: Active profile.
+        level: Effective init level (controls which profile assets are included).
+    """
     if profile == InitProfile.CODEX:
+        # Always-on Codex assets (all templates)
         _create_dir(result, root / "governance" / "sessions")
         _write_file(
             result,
             root / "governance" / "sessions" / "session-template.md",
             _CODEX_SESSION_TEMPLATE,
         )
-        _write_file(
-            result,
-            root / "AGENTS.md",
-            _AGENTS_MD_TEMPLATE,
-        )
+        _write_file(result, root / "AGENTS.md", _AGENTS_MD_TEMPLATE)
+        _write_file(result, root / ".codex" / "config.toml", _CODEX_CONFIG_TOML)
+
+        # Codex governed: add a concrete preflight skill
+        if level == InitLevel.GOVERNED:
+            _create_dir(result, root / "governance" / "skills")
+            _write_file(
+                result,
+                root / "governance" / "skills" / "govos-preflight.skill.md",
+                _CODEX_PREFLIGHT_SKILL,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -372,9 +487,10 @@ def validate_doctrine(root: Path) -> list[Issue]:
 
 def format_result(result: ScaffoldResult) -> str:
     """Return a human-readable summary of a ScaffoldResult."""
+    template_label = result.template or result.level
     lines: list[str] = [
         f"Initialized governance-os repo at: {result.root}",
-        f"  level={result.level}  profile={result.profile}",
+        f"  profile={result.profile}  template={template_label}",
     ]
 
     if result.created_dirs:

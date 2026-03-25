@@ -106,18 +106,42 @@ def _maybe_write_json(data: dict, out: Path | None) -> None:
 @app.command()
 def init(
     path: str = typer.Argument(".", help="Directory to initialize as a governance repo."),
-    level: str = typer.Option(
-        "standard", "--level", help="Governance maturity level: minimal, standard, governed."
+    template: str | None = typer.Option(
+        None,
+        "--template",
+        help="Scaffold template: minimal or governed. Takes precedence over --level.",
     ),
-    profile: str = typer.Option("generic", "--profile", help="Optional profile: generic, codex."),
+    level: str = typer.Option(
+        "standard",
+        "--level",
+        help="Governance maturity level: minimal, standard, governed. Legacy; prefer --template.",
+    ),
+    profile: str = typer.Option("generic", "--profile", help="Profile: generic or codex."),
     with_doctrine: bool = typer.Option(
         False, "--with-doctrine", help="Scaffold an optional doctrine file."
     ),
 ) -> None:
-    """Initialize a governance-os repo with default structure."""
-    result = init_repo(
-        _resolve_root(path), level=level, profile=profile, with_doctrine=with_doctrine
-    )
+    """Initialize a governance-os repo with default structure.
+
+    Use --profile to select the environment convention and --template to select
+    the scaffold surface area.
+
+    Examples:
+      govos init --profile generic --template minimal
+      govos init --profile codex --template minimal
+      govos init --profile codex --template governed
+    """
+    try:
+        result = init_repo(
+            _resolve_root(path),
+            level=level,
+            profile=profile,
+            with_doctrine=with_doctrine,
+            template=template,
+        )
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     typer.echo(format_result(result))
 
 
@@ -521,8 +545,10 @@ def profile_list_cmd() -> None:
     profiles = api.profile_list()
     for p in profiles:
         plugins = ", ".join(p.default_plugins) if p.default_plugins else "none"
+        templates = ", ".join(p.supported_templates) if p.supported_templates else "none"
         typer.echo(f"  [{p.id}] {p.name}")
         typer.echo(f"    {p.description}")
+        typer.echo(f"    templates: {templates}")
         typer.echo(f"    default plugins: {plugins}")
         typer.echo("")
 
@@ -540,6 +566,8 @@ def profile_show_cmd(
     typer.echo(f"Profile: {profile.id}")
     typer.echo(f"  Name: {profile.name}")
     typer.echo(f"  Description: {profile.description}")
+    if profile.supported_templates:
+        typer.echo(f"  Supported templates: {', '.join(profile.supported_templates)}")
     if profile.default_plugins:
         typer.echo(f"  Default plugins: {', '.join(profile.default_plugins)}")
     else:

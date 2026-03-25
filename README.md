@@ -74,32 +74,63 @@ Most commands also accept `--out <path>` to write a report file to disk.
 
 ## Repository Layout
 
-After running `govos init`, your repo will contain:
+`govos init` supports two dimensions: **profile** (environment conventions) and **template** (scaffold surface area).
+
+### Profiles
+
+| Profile | Description |
+|---|---|
+| `generic` | Vendor-neutral. No agent-specific assumptions. Default. |
+| `codex` | Adds `AGENTS.md`, `.codex/config.toml`, and session contracts. |
+
+### Templates
+
+| Template | Surface area |
+|---|---|
+| `minimal` | `governance/pipelines/`, `artifacts/`, `governance.yaml` |
+| `governed` | above + `docs/governance/`, `governance/skills/`, `governance/doctrine/`, `artifacts/governance/` |
+
+### Scaffold combinations
+
+**`generic:minimal`** — bare governance structure:
+
+```
+your-repo/
+├── governance/pipelines/001--example.md
+├── artifacts/
+└── governance.yaml             # includes profile: generic
+```
+
+**`codex:minimal`** — minimal with Codex instruction surfaces:
 
 ```
 your-repo/
 ├── governance/
-│   └── pipelines/
-│       └── 001--example.md     # pipeline contracts
-├── docs/
-│   └── governance/
-│       └── README.governance.md
-├── artifacts/                  # build and verification outputs
-└── governance.yaml             # govos configuration
+│   ├── pipelines/001--example.md
+│   └── sessions/session-template.md
+├── artifacts/
+├── AGENTS.md                   # short operational instructions
+├── .codex/config.toml          # Codex profile config
+└── governance.yaml             # includes profile: codex
 ```
 
-For `govos init --level governed`:
+**`codex:governed`** — full governance with layered Codex assets:
 
 ```
 your-repo/
 ├── governance/
 │   ├── pipelines/
-│   ├── skills/                 # optional skill references
-│   └── doctrine/               # optional governance doctrine
+│   ├── sessions/
+│   ├── skills/govos-preflight.skill.md
+│   └── doctrine/doctrine.md
 ├── docs/governance/
-├── artifacts/governance/       # registry snapshots and audit reports
+├── artifacts/governance/
+├── AGENTS.md
+├── .codex/config.toml
 └── governance.yaml
 ```
+
+`AGENTS.md` is kept short and operational. Detailed procedures live in `governance/skills/` where they do not burden the always-read instruction surface.
 
 ---
 
@@ -200,28 +231,32 @@ The package runs with defaults if `governance.yaml` is absent.
 
 ## CLI Reference
 
-### `govos init [PATH] [--level LEVEL] [--profile PROFILE] [--with-doctrine]`
+### `govos init [PATH] [--profile PROFILE] [--template TEMPLATE] [--with-doctrine]`
 
 Initialises a governance-os repo at PATH (default `.`).
 
-**Levels:**
+```
+govos init --profile generic --template minimal   # bare structure
+govos init --profile codex --template minimal     # Codex with minimal scaffold
+govos init --profile codex --template governed    # Codex with full governance surface
+```
 
-| Level | Creates |
+**`--profile`:** `generic` (default) or `codex`
+
+**`--template`:** `minimal` or `governed`
+
+| Template | Creates |
 |---|---|
 | `minimal` | `governance/pipelines/`, `artifacts/`, `governance.yaml` |
-| `standard` | above + `docs/governance/` (default) |
-| `governed` | above + `artifacts/governance/`, `governance/skills/`, `governance/doctrine/` |
+| `governed` | above + `docs/governance/`, `governance/skills/`, `governance/doctrine/`, `artifacts/governance/` |
 
-**Profiles:**
+The `codex` profile adds `AGENTS.md`, `.codex/config.toml`, and `governance/sessions/` on top of the selected template. The `governed` template also adds `governance/skills/govos-preflight.skill.md` for the `codex` profile.
 
-| Profile | Extra assets |
-|---|---|
-| `generic` | none (default) |
-| `codex` | `governance/sessions/session-template.md` |
+`--with-doctrine` scaffolds a doctrine file without requiring the full `governed` template.
 
-`--with-doctrine` scaffolds a doctrine file at the standard level.
+`--level` is a legacy alias for `--template` and still works (`minimal`, `standard`, `governed`).
 
-Safe to run multiple times — existing files are never overwritten.
+Generated `governance.yaml` includes the active `profile:` field. Existing files are never overwritten.
 
 ---
 
@@ -404,10 +439,10 @@ Profiles are **data definitions**, not code. They do not change the core runtime
 
 ### Available profiles
 
-| Profile | Default plugins | Expected surfaces |
-|---|---|---|
-| `generic` | none | `governance/pipelines`, `artifacts`, `governance.yaml` |
-| `codex` | `codex_instructions` | above + `AGENTS.md` |
+| Profile | Templates | Default plugins | Expected surfaces |
+|---|---|---|---|
+| `generic` | `minimal`, `governed` | none | `governance/pipelines`, `artifacts`, `governance.yaml` |
+| `codex` | `minimal`, `governed` | `codex_instructions` | above + `AGENTS.md` |
 
 ### What plugins are
 
@@ -456,8 +491,9 @@ The core runtime remains the same for both. Profile selection is purely additive
 ### Profile-aware init
 
 ```
-govos init --profile generic    # default, no agent-specific assets
-govos init --profile codex      # creates AGENTS.md + governance/sessions/
+govos init --profile generic --template minimal    # bare governance structure
+govos init --profile codex --template minimal      # Codex: AGENTS.md + .codex/config.toml + sessions
+govos init --profile codex --template governed     # above + skills + doctrine + registry artifacts
 ```
 
 ### Profile-aware validation
