@@ -32,6 +32,7 @@ class VerifyResult(BaseModel):
     @property
     def error_count(self) -> int:
         from governance_os.models.issue import Severity
+
         return sum(1 for i in self.issues if i.severity == Severity.ERROR)
 
     @property
@@ -48,3 +49,4 @@ class PortabilityResult(BaseModel):
     @property
     def passed(self) -> bool:
         return len(self.issues) == 0
+

@@ -44,20 +44,22 @@ def build_graph(
                 continue
 
             if dep_ref not in known:
-                issues.append(Issue(
-                    code="UNRESOLVED_DEPENDENCY",
-                    severity=Severity.ERROR,
-                    message=(
-                        f"Pipeline '{p.numeric_id}' declares dependency '{dep_ref}' "
-                        "which does not match any known pipeline id."
-                    ),
-                    path=p.path,
-                    pipeline_id=p.numeric_id,
-                    suggestion=(
-                        f"Ensure a pipeline with numeric id '{dep_ref}' exists "
-                        "or correct the dependency reference."
-                    ),
-                ))
+                issues.append(
+                    Issue(
+                        code="UNRESOLVED_DEPENDENCY",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Pipeline '{p.numeric_id}' declares dependency '{dep_ref}' "
+                            "which does not match any known pipeline id."
+                        ),
+                        path=p.path,
+                        pipeline_id=p.numeric_id,
+                        suggestion=(
+                            f"Ensure a pipeline with numeric id '{dep_ref}' exists "
+                            "or correct the dependency reference."
+                        ),
+                    )
+                )
             else:
                 # Edge: prerequisite → dependent
                 graph.add_edge(dep_ref, p.numeric_id)

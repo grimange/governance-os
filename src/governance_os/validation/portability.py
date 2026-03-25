@@ -40,44 +40,52 @@ def _check_output(
         return issues
 
     if _UNIX_ABSOLUTE.match(stripped):
-        issues.append(Issue(
-            code="ABSOLUTE_PATH",
-            severity=Severity.ERROR,
-            message=f"Output '{stripped}' is an absolute Unix path.",
-            path=path,
-            pipeline_id=pid,
-            suggestion="Use a repo-root-relative path instead (e.g. 'artifacts/foo.json').",
-        ))
+        issues.append(
+            Issue(
+                code="ABSOLUTE_PATH",
+                severity=Severity.ERROR,
+                message=f"Output '{stripped}' is an absolute Unix path.",
+                path=path,
+                pipeline_id=pid,
+                suggestion="Use a repo-root-relative path instead (e.g. 'artifacts/foo.json').",
+            )
+        )
 
     elif _WINDOWS_DRIVE.match(stripped):
-        issues.append(Issue(
-            code="WINDOWS_DRIVE_PATH",
-            severity=Severity.ERROR,
-            message=f"Output '{stripped}' contains a Windows drive letter path.",
-            path=path,
-            pipeline_id=pid,
-            suggestion="Use a repo-root-relative path instead.",
-        ))
+        issues.append(
+            Issue(
+                code="WINDOWS_DRIVE_PATH",
+                severity=Severity.ERROR,
+                message=f"Output '{stripped}' contains a Windows drive letter path.",
+                path=path,
+                pipeline_id=pid,
+                suggestion="Use a repo-root-relative path instead.",
+            )
+        )
 
     elif _HOME_TILDE.match(stripped):
-        issues.append(Issue(
-            code="HOME_RELATIVE_PATH",
-            severity=Severity.ERROR,
-            message=f"Output '{stripped}' uses a home-directory (~) reference.",
-            path=path,
-            pipeline_id=pid,
-            suggestion="Use a repo-root-relative path instead.",
-        ))
+        issues.append(
+            Issue(
+                code="HOME_RELATIVE_PATH",
+                severity=Severity.ERROR,
+                message=f"Output '{stripped}' uses a home-directory (~) reference.",
+                path=path,
+                pipeline_id=pid,
+                suggestion="Use a repo-root-relative path instead.",
+            )
+        )
 
     elif _PATH_TRAVERSAL.search(stripped):
-        issues.append(Issue(
-            code="PATH_TRAVERSAL",
-            severity=Severity.ERROR,
-            message=f"Output '{stripped}' uses '..' which may escape the repo root.",
-            path=path,
-            pipeline_id=pid,
-            suggestion="Remove '..' segments and use explicit repo-root-relative paths.",
-        ))
+        issues.append(
+            Issue(
+                code="PATH_TRAVERSAL",
+                severity=Severity.ERROR,
+                message=f"Output '{stripped}' uses '..' which may escape the repo root.",
+                path=path,
+                pipeline_id=pid,
+                suggestion="Remove '..' segments and use explicit repo-root-relative paths.",
+            )
+        )
 
     return issues
 

@@ -2,9 +2,7 @@
 
 from pathlib import Path
 
-import pytest
-
-from governance_os.parsing.markdown_contract import ParsedContract, ParseIssue, parse_contract
+from governance_os.parsing.markdown_contract import ParsedContract, parse_contract
 
 _FULL_CONTRACT = """\
 # 001 — Full Example

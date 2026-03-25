@@ -10,9 +10,7 @@ from governance_os.validation.portability import scan_pipeline, scan_pipelines
 
 
 def _p(outputs):
-    return Pipeline(
-        numeric_id="001", slug="x", path=Path("001--x.md"), outputs=outputs
-    )
+    return Pipeline(numeric_id="001", slug="x", path=Path("001--x.md"), outputs=outputs)
 
 
 def test_clean_relative_path_no_issues():

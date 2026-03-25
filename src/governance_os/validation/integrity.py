@@ -47,16 +47,18 @@ def _check_duplicate_ids(pipelines: list[Pipeline]) -> list[Issue]:
         if len(group) > 1:
             paths = ", ".join(str(p.path) for p in group)
             for p in group:
-                issues.append(Issue(
-                    code="DUPLICATE_PIPELINE_ID",
-                    severity=Severity.ERROR,
-                    message=(
-                        f"Numeric id '{numeric_id}' is shared by multiple pipelines: {paths}"
-                    ),
-                    path=p.path,
-                    pipeline_id=numeric_id,
-                    suggestion="Assign a unique numeric id to each pipeline file.",
-                ))
+                issues.append(
+                    Issue(
+                        code="DUPLICATE_PIPELINE_ID",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Numeric id '{numeric_id}' is shared by multiple pipelines: {paths}"
+                        ),
+                        path=p.path,
+                        pipeline_id=numeric_id,
+                        suggestion="Assign a unique numeric id to each pipeline file.",
+                    )
+                )
 
     return issues
 
@@ -74,15 +76,15 @@ def _check_duplicate_slugs(pipelines: list[Pipeline]) -> list[Issue]:
         if len(group) > 1:
             paths = ", ".join(str(p.path) for p in group)
             for p in group:
-                issues.append(Issue(
-                    code="DUPLICATE_SLUG",
-                    severity=Severity.WARNING,
-                    message=(
-                        f"Slug '{slug}' is shared by multiple pipelines: {paths}"
-                    ),
-                    path=p.path,
-                    pipeline_id=p.numeric_id,
-                    suggestion="Use a unique descriptive slug for each pipeline file.",
-                ))
+                issues.append(
+                    Issue(
+                        code="DUPLICATE_SLUG",
+                        severity=Severity.WARNING,
+                        message=(f"Slug '{slug}' is shared by multiple pipelines: {paths}"),
+                        path=p.path,
+                        pipeline_id=p.numeric_id,
+                        suggestion="Use a unique descriptive slug for each pipeline file.",
+                    )
+                )
 
     return issues

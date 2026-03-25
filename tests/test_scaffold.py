@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from governance_os.scaffolding.init import ScaffoldResult, format_result, init_repo
+from governance_os.scaffolding.init import format_result, init_repo
 
 
 def test_init_creates_directories(tmp_path: Path) -> None:

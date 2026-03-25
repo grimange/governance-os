@@ -1,8 +1,29 @@
 # governance-os
 
-A universal Python governance runtime for pipeline contract management.
+A lightweight governance runtime for pipeline contract management.
 
-Install once. Use in any repo. No template duplication required.
+Define structured pipeline contracts in plain markdown. governance-os discovers, validates, and reports on them — in any repository, with zero configuration required.
+
+---
+
+## What it does
+
+governance-os treats your build, release, or implementation pipeline as a set of **contracts**: markdown files that describe what each pipeline stage does, what it depends on, and what artifacts it produces.
+
+The runtime provides:
+
+- **Discovery** — finds all pipeline contracts under a configured directory
+- **Validation** — checks required fields, allowed stage values, and naming integrity
+- **Dependency analysis** — builds a dependency graph, detects unresolved references and cycles
+- **Readiness classification** — reports each pipeline as `ready`, `blocked`, `invalid`, or `orphaned`
+- **Portability checks** — scans output declarations for non-portable paths
+- **Pipeline registry** — builds and verifies a structured snapshot of the governed pipeline set
+- **Preflight check** — single fail-closed governance readiness gate
+- **Audit analysis** — deeper governance coverage checks (readiness, coverage, drift)
+- **Authority validation** — verifies source-of-truth configuration
+- **Candidate discovery** — finds uncontracted pipeline-like directories
+- **Skills index** — indexes and validates reusable skill references
+- **Init profiles and levels** — scaffold governance at different maturity levels
 
 ---
 
@@ -25,23 +46,58 @@ pip install -e ".[dev]"
 ## Quick Start
 
 ```
-# 1. Initialise a repo
+# 1. Initialise a repo with the default structure
 govos init
 
-# 2. Discover pipeline contracts
+# 2. Run a preflight governance check (fail-closed)
+govos preflight
+
+# 3. Discover and parse pipeline contracts
 govos scan
 
-# 3. Validate contracts and dependency graph
+# 4. Validate contracts and the dependency graph
 govos verify
 
-# 4. Report pipeline readiness
+# 5. Report pipeline readiness
 govos status
 
-# 5. Check for portability issues
+# 6. Check output declarations for portability issues
 govos portability scan
 ```
 
-All commands accept a path argument (defaults to `.`) and a `--json` flag for machine-readable output.
+All commands accept a `PATH` argument (defaults to `.`) and a `--json` flag for machine-readable output.
+Most commands also accept `--out <path>` to write a report file to disk.
+
+---
+
+## Repository Layout
+
+After running `govos init`, your repo will contain:
+
+```
+your-repo/
+├── governance/
+│   └── pipelines/
+│       └── 001--example.md     # pipeline contracts
+├── docs/
+│   └── governance/
+│       └── README.governance.md
+├── artifacts/                  # build and verification outputs
+└── governance.yaml             # govos configuration
+```
+
+For `govos init --level governed`:
+
+```
+your-repo/
+├── governance/
+│   ├── pipelines/
+│   ├── skills/                 # optional skill references
+│   └── doctrine/               # optional governance doctrine
+├── docs/governance/
+├── artifacts/governance/       # registry snapshots and audit reports
+└── governance.yaml
+```
 
 ---
 
@@ -69,7 +125,7 @@ The numeric id must be unique across the repo. The slug must be lowercase alphan
 Stage: establish
 
 Purpose:
-Bootstrap the project structure.
+Bootstrap the project structure with the minimum viable src layout.
 
 Depends on:
 - none
@@ -82,7 +138,7 @@ Outputs:
 - pyproject.toml
 
 Implementation Notes:
-Use a src/ layout.
+Use a src/ layout. CLI entry point must resolve after editable install.
 
 Success Criteria:
 - Package installs in editable mode
@@ -142,35 +198,115 @@ The package runs with defaults if `governance.yaml` is absent.
 
 ## CLI Reference
 
-### `govos init [PATH]`
+### `govos init [PATH] [--level LEVEL] [--profile PROFILE] [--with-doctrine]`
 
 Initialises a governance-os repo at PATH (default `.`).
 
-Creates:
-- `governance/pipelines/` — pipeline contracts directory
-- `docs/governance/` — governance documentation
-- `artifacts/` — build and verification artifacts
-- `governance.yaml` — default configuration
-- `governance/pipelines/001--example.md` — starter pipeline
-- `docs/governance/README.governance.md` — governance overview
+**Levels:**
 
-Safe to run multiple times. Existing files are never overwritten.
+| Level | Creates |
+|---|---|
+| `minimal` | `governance/pipelines/`, `artifacts/`, `governance.yaml` |
+| `standard` | above + `docs/governance/` (default) |
+| `governed` | above + `artifacts/governance/`, `governance/skills/`, `governance/doctrine/` |
 
-### `govos scan [PATH] [--json]`
+**Profiles:**
+
+| Profile | Extra assets |
+|---|---|
+| `generic` | none (default) |
+| `codex` | `governance/sessions/session-template.md` |
+
+`--with-doctrine` scaffolds a doctrine file at the standard level.
+
+Safe to run multiple times — existing files are never overwritten.
+
+---
+
+### `govos scan [PATH] [--json] [--out PATH]`
 
 Discovers and parses pipeline contracts. Reports parse errors including filename violations.
 
-### `govos verify [PATH] [--json]`
+### `govos verify [PATH] [--json] [--out PATH]`
 
-Validates all contracts against schema rules, checks naming integrity, and analyses the dependency graph. Exits 0 on pass, 1 on failure.
+Validates all contracts against schema rules, checks naming integrity, and analyses the dependency graph. Exits `0` on pass, `1` on failure.
 
-### `govos status [PATH] [--json]`
+### `govos status [PATH] [--json] [--out PATH]`
 
 Classifies each pipeline as `ready`, `blocked`, `invalid`, or `orphaned`.
 
-### `govos portability scan [PATH] [--json]`
+### `govos preflight [PATH] [--json] [--out PATH] [--authority] [--no-portability]`
 
-Scans output declarations for non-portable paths (absolute paths, Windows drive letters, path traversal). Exits 0 on pass, 1 on failure.
+Runs a single fail-closed governance readiness check that composes:
+- contract parsing
+- schema and integrity validation
+- dependency graph analysis
+- portability checks (disable with `--no-portability`)
+- authority validation (enable with `--authority`)
+
+Exits `0` on pass, `1` on any error.
+
+### `govos portability scan [PATH] [--json] [--out PATH]`
+
+Scans output declarations for non-portable paths (absolute paths, Windows drive letters, home-directory `~`, path traversal `..`). Exits `0` on pass, `1` on failure.
+
+---
+
+### `govos registry build [PATH] [--json] [--out PATH]`
+
+Builds a registry snapshot from all discovered pipeline contracts. Detects duplicate ids, missing stages, and empty output declarations.
+
+### `govos registry verify [PATH] [--json] [--out PATH] [--snapshot PATH]`
+
+Verifies registry integrity. With `--snapshot`, reconciles against an existing JSON registry file to detect stale or untracked entries.
+
+---
+
+### `govos audit readiness [PATH] [--json] [--out PATH]`
+
+Audits governance readiness: finds contracts missing purpose, scope, implementation notes, or adequate success criteria.
+
+### `govos audit coverage [PATH] [--json] [--out PATH]`
+
+Audits governance coverage: finds pipeline-like directories (containing Makefile, Dockerfile, build scripts, etc.) that have no governance contract.
+
+### `govos audit drift [PATH] [--json] [--out PATH]`
+
+Audits output drift: finds declared output artifacts that do not exist on disk.
+
+---
+
+### `govos discover candidates [PATH] [--json] [--out PATH]`
+
+Discovers pipeline-like directories lacking governance contracts. Returns candidates with suggested ids, confidence levels, and reasons.
+
+---
+
+### `govos authority verify [PATH] [--json] [--out PATH]`
+
+Validates authority and source-of-truth configuration:
+- Required authority files exist (`governance.yaml`)
+- No pipeline contracts are inside artifact/generated directories
+- Dependency references use numeric ids, not file paths
+- Configured directories exist
+
+Exits `0` on pass, `1` on error.
+
+---
+
+### `govos skills index [PATH] [--json] [--out PATH]`
+
+Indexes all skill definitions found in `governance/skills/` (or `skills/`). Reports skill ids, names, and descriptions.
+
+### `govos skills verify [PATH] [--json] [--out PATH]`
+
+Indexes skills and validates them: detects empty files and duplicate ids.
+
+---
+
+### `govos doctrine validate [PATH]`
+
+Validates that a governance doctrine file exists at `governance/doctrine/doctrine.md` and is non-empty.
 
 ---
 
@@ -182,25 +318,92 @@ import governance_os.api as api
 
 root = Path(".")
 
-scan_result     = api.scan(root)        # ScanResult
-verify_result   = api.verify(root)      # VerifyResult
-status_result   = api.status(root)      # StatusResult
-port_result     = api.portability(root) # PortabilityResult
+# Core commands
+scan_result      = api.scan(root)             # ScanResult
+verify_result    = api.verify(root)           # VerifyResult
+status_result    = api.status(root)           # StatusResult
+port_result      = api.portability(root)      # PortabilityResult
+
+# Phase 1 — Operational
+preflight_result = api.preflight(root)        # PreflightResult
+registry_result  = api.registry_build(root)  # RegistryResult
+reg_verify       = api.registry_verify(root) # RegistryResult
+
+# Phase 2 — Analysis
+audit_ready      = api.audit(root, mode="readiness")  # AuditResult
+audit_cov        = api.audit(root, mode="coverage")   # AuditResult
+audit_drift      = api.audit(root, mode="drift")      # AuditResult
+candidates       = api.candidates(root)               # CandidateResult
+authority        = api.authority_verify(root)         # AuthorityResult
+
+# Phase 3 — Optional
+skills           = api.skills_index(root)    # SkillsResult
+skills_v         = api.skills_verify(root)   # SkillsResult
 ```
 
-All functions return typed Pydantic models. See `src/governance_os/models/` for the full model definitions.
+All functions return typed Pydantic models. See `src/governance_os/models/` for full model definitions.
 
 ---
 
-## Development
+## Issue Codes
+
+All diagnostics use stable, machine-readable codes:
+
+| Code | Severity | Description |
+|---|---|---|
+| `MISSING_PIPELINES_DIR` | error | Pipelines directory not found |
+| `FILENAME_PARSE_ERROR` | error | Filename doesn't match `<id>--<slug>.md` |
+| `MISSING_REQUIRED_FIELD` | error | Required contract field is missing |
+| `INVALID_STAGE` | error | Stage not in allowed set |
+| `DUPLICATE_PIPELINE_ID` | error | Multiple pipelines share the same numeric id |
+| `UNRESOLVED_DEPENDENCY` | error | Depends on a non-existent pipeline |
+| `DEPENDENCY_CYCLE` | error | Circular dependency detected |
+| `ABSOLUTE_PATH` | error | Output path is absolute (not portable) |
+| `WINDOWS_DRIVE_PATH` | error | Output path contains Windows drive letter |
+| `PATH_TRAVERSAL` | error | Output path contains `../` traversal |
+| `HOME_RELATIVE_PATH` | error | Output path starts with `~` |
+| `REGISTRY_DUPLICATE_ID` | error | Registry has duplicate pipeline id |
+| `AUTHORITY_MISSING_ROOT` | error | Required authority file is missing |
+| `AUTHORITY_CONTRACT_IN_ARTIFACT_DIR` | error | Contract file inside generated directory |
+| `AUDIT_UNCONTRACTED_SURFACE` | warning | Pipeline-like directory without a contract |
+| `AUDIT_MISSING_OUTPUT` | warning | Declared output artifact does not exist |
+| `REGISTRY_STALE_ENTRY` | warning | Registry snapshot has entry no longer discovered |
+| `REGISTRY_UNTRACKED_PIPELINE` | warning | Discovered pipeline absent from registry snapshot |
+
+---
+
+## Development Setup
 
 ```
+git clone <repo>
+cd governance-os
 pip install -e ".[dev]"
 pytest
 ```
 
+### Lint and format
+
+```
+ruff check src/ tests/
+black --check src/ tests/
+ruff check --fix src/ tests/
+black src/ tests/
+```
+
 ---
 
-## Version
+## Contributing
 
-`0.1.0`
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## License
+
+MIT

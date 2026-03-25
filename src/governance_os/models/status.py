@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel
 
 
-class PipelineStatus(str, Enum):
+class PipelineStatus(StrEnum):
     READY = "ready"
     BLOCKED = "blocked"
     INVALID = "invalid"

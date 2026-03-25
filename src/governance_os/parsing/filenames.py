@@ -24,9 +24,9 @@ _PATTERN = re.compile(r"^(?P<id>\d+)--(?P<slug>[a-z0-9][a-z0-9-]*)\.md$")
 class PipelineIdentity:
     """Parsed identity derived from a pipeline filename."""
 
-    numeric_id: str   # zero-padded string, e.g. "001"
-    slug: str         # e.g. "establish-skeleton"
-    path: Path        # original file path
+    numeric_id: str  # zero-padded string, e.g. "001"
+    slug: str  # e.g. "establish-skeleton"
+    path: Path  # original file path
 
 
 @dataclass(frozen=True)

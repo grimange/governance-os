@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from governance_os.cli import app
@@ -66,11 +65,16 @@ def test_scan_finds_pipeline(tmp_path):
 def test_scan_missing_dir(tmp_path):
     result = runner.invoke(app, ["scan", str(tmp_path)])
     assert result.exit_code == 0
-    assert "0 pipeline" in result.output or "not found" in result.output.lower() or "parse error" in result.output.lower()
+    assert (
+        "0 pipeline" in result.output
+        or "not found" in result.output.lower()
+        or "parse error" in result.output.lower()
+    )
 
 
 def test_scan_json_valid(tmp_path):
     import json
+
     root = _init_repo(tmp_path)
     result = runner.invoke(app, ["scan", str(root), "--json"])
     assert result.exit_code == 0
@@ -88,8 +92,8 @@ def test_verify_passes_for_valid_pipeline(tmp_path):
 
 def test_verify_json_valid(tmp_path):
     import json
+
     root = _init_repo(tmp_path)
-    result = runner.invoke(app, ["verify", str(root)])
     # verify returns 0 for passing repo
     json_result = runner.invoke(app, ["verify", str(root), "--json"])
     data = json.loads(json_result.output)
@@ -106,6 +110,7 @@ def test_status_lists_pipelines(tmp_path):
 
 def test_status_json_valid(tmp_path):
     import json
+
     root = _init_repo(tmp_path)
     result = runner.invoke(app, ["status", str(root), "--json"])
     assert result.exit_code == 0
@@ -123,6 +128,7 @@ def test_portability_scan_passes_clean(tmp_path):
 
 def test_portability_scan_json_valid(tmp_path):
     import json
+
     root = _init_repo(tmp_path)
     result = runner.invoke(app, ["portability", "scan", str(root), "--json"])
     assert result.exit_code == 0

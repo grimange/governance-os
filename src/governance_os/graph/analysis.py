@@ -32,14 +32,16 @@ def detect_cycles(graph: nx.DiGraph) -> list[Issue]:
         for node_id in cycle:
             pipeline: Pipeline | None = graph.nodes[node_id].get("pipeline")
             path = pipeline.path if pipeline else None
-            issues.append(Issue(
-                code="DEPENDENCY_CYCLE",
-                severity=Severity.ERROR,
-                message=f"Circular dependency detected: {cycle_str}",
-                path=path,
-                pipeline_id=node_id,
-                suggestion="Remove or reorder the dependencies to break the cycle.",
-            ))
+            issues.append(
+                Issue(
+                    code="DEPENDENCY_CYCLE",
+                    severity=Severity.ERROR,
+                    message=f"Circular dependency detected: {cycle_str}",
+                    path=path,
+                    pipeline_id=node_id,
+                    suggestion="Remove or reorder the dependencies to break the cycle.",
+                )
+            )
 
     return issues
 

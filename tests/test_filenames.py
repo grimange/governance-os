@@ -12,13 +12,16 @@ from governance_os.parsing.filenames import (
 )
 
 
-@pytest.mark.parametrize("name,expected_id,expected_slug", [
-    ("001--setup.md", "001", "setup"),
-    ("042--verify-outputs.md", "042", "verify-outputs"),
-    ("999--release-v1.md", "999", "release-v1"),
-    ("001--a.md", "001", "a"),
-    ("0001--long-id.md", "0001", "long-id"),
-])
+@pytest.mark.parametrize(
+    "name,expected_id,expected_slug",
+    [
+        ("001--setup.md", "001", "setup"),
+        ("042--verify-outputs.md", "042", "verify-outputs"),
+        ("999--release-v1.md", "999", "release-v1"),
+        ("001--a.md", "001", "a"),
+        ("0001--long-id.md", "0001", "long-id"),
+    ],
+)
 def test_valid_filenames(name, expected_id, expected_slug):
     result = parse_filename(Path(name))
     assert isinstance(result, PipelineIdentity)
@@ -26,16 +29,19 @@ def test_valid_filenames(name, expected_id, expected_slug):
     assert result.slug == expected_slug
 
 
-@pytest.mark.parametrize("name", [
-    "001-single-dash.md",    # single dash
-    "example.md",            # no id
-    "001--Example.md",       # uppercase slug
-    "001--.md",              # empty slug
-    "001--foo.txt",          # wrong extension
-    "--foo.md",              # no numeric id
-    "abc--foo.md",           # non-numeric id
-    "001--foo bar.md",       # space in slug
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "001-single-dash.md",  # single dash
+        "example.md",  # no id
+        "001--Example.md",  # uppercase slug
+        "001--.md",  # empty slug
+        "001--foo.txt",  # wrong extension
+        "--foo.md",  # no numeric id
+        "abc--foo.md",  # non-numeric id
+        "001--foo bar.md",  # space in slug
+    ],
+)
 def test_invalid_filenames(name):
     result = parse_filename(Path(name))
     assert isinstance(result, FilenameParseError)

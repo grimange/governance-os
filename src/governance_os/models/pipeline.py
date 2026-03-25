@@ -13,8 +13,8 @@ class Pipeline(BaseModel):
     """A fully parsed and normalised pipeline contract."""
 
     # Identity (from filename)
-    numeric_id: str          # e.g. "001"
-    slug: str                # e.g. "establish-skeleton"
+    numeric_id: str  # e.g. "001"
+    slug: str  # e.g. "establish-skeleton"
     path: Path
 
     # Metadata (from contract body)
@@ -22,7 +22,7 @@ class Pipeline(BaseModel):
     stage: str = ""
     scope: str = ""
     purpose: str = ""
-    depends_on: list[str] = []   # list of numeric ids or slugs as declared
+    depends_on: list[str] = []  # list of numeric ids or slugs as declared
     inputs: list[str] = []
     outputs: list[str] = []
     implementation_notes: str = ""

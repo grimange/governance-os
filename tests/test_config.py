@@ -4,6 +4,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from governance_os.config import GovernanceConfig, load_config, resolve_pipelines_dir
 
@@ -38,10 +39,8 @@ def test_load_config_empty_file(tmp_path: Path) -> None:
 
 def test_load_config_invalid_pipelines_dir(tmp_path: Path) -> None:
     """load_config raises when pipelines_dir is blank."""
-    (tmp_path / "governance.yaml").write_text(
-        "pipelines_dir: '   '", encoding="utf-8"
-    )
-    with pytest.raises(Exception):
+    (tmp_path / "governance.yaml").write_text("pipelines_dir: '   '", encoding="utf-8")
+    with pytest.raises(ValidationError):
         load_config(tmp_path)
 
 

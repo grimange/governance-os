@@ -21,19 +21,26 @@ _PATH = Path("001--foo.md")
 
 def _pipeline():
     return Pipeline(
-        numeric_id="001", slug="foo", path=_PATH,
-        title="Foo", stage="establish",
+        numeric_id="001",
+        slug="foo",
+        path=_PATH,
+        title="Foo",
+        stage="establish",
     )
 
 
 def _issue():
     return Issue(
-        code="MISSING_STAGE", severity=Severity.ERROR,
-        message="Missing stage", path=_PATH, pipeline_id="001",
+        code="MISSING_STAGE",
+        severity=Severity.ERROR,
+        message="Missing stage",
+        path=_PATH,
+        pipeline_id="001",
     )
 
 
 # --- scan ---
+
 
 def test_scan_to_json_structure():
     result = ScanResult(root=_ROOT, pipelines=[_pipeline()])
@@ -62,6 +69,7 @@ def test_scan_to_json_parse_errors():
 
 # --- verify ---
 
+
 def test_verify_to_json_passed():
     result = VerifyResult(root=_ROOT, pipelines=[_pipeline()])
     data = verify_to_json(result)
@@ -81,9 +89,12 @@ def test_verify_to_json_failed():
 
 # --- status ---
 
+
 def test_status_to_json_structure():
     rec = StatusRecord(
-        pipeline_id="001", slug="foo", path=_PATH,
+        pipeline_id="001",
+        slug="foo",
+        path=_PATH,
         status=PipelineStatus.READY,
     )
     result = StatusResult(root=_ROOT, records=[rec])
@@ -95,8 +106,11 @@ def test_status_to_json_structure():
 
 def test_status_to_json_reasons():
     rec = StatusRecord(
-        pipeline_id="001", slug="foo", path=_PATH,
-        status=PipelineStatus.BLOCKED, reasons=["Dep missing."],
+        pipeline_id="001",
+        slug="foo",
+        path=_PATH,
+        status=PipelineStatus.BLOCKED,
+        reasons=["Dep missing."],
     )
     result = StatusResult(root=_ROOT, records=[rec])
     data = status_to_json(result)
@@ -104,6 +118,7 @@ def test_status_to_json_reasons():
 
 
 # --- portability ---
+
 
 def test_portability_to_json_passed():
     result = PortabilityResult(root=_ROOT)
@@ -114,8 +129,13 @@ def test_portability_to_json_passed():
 
 
 def test_portability_to_json_failed():
-    issue = Issue(code="ABSOLUTE_PATH", severity=Severity.ERROR,
-                  message="Bad path", path=_PATH, pipeline_id="001")
+    issue = Issue(
+        code="ABSOLUTE_PATH",
+        severity=Severity.ERROR,
+        message="Bad path",
+        path=_PATH,
+        pipeline_id="001",
+    )
     result = PortabilityResult(root=_ROOT, issues=[issue])
     data = portability_to_json(result)
     assert data["passed"] is False
@@ -123,6 +143,7 @@ def test_portability_to_json_failed():
 
 
 # --- to_json_str ---
+
 
 def test_to_json_str_produces_valid_json():
     data = scan_to_json(ScanResult(root=_ROOT))
@@ -138,6 +159,7 @@ def test_to_json_str_is_indented():
 
 
 # --- issue serialisation ---
+
 
 def test_issue_fields_present():
     result = VerifyResult(root=_ROOT, issues=[_issue()])

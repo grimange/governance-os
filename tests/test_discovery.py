@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from governance_os.config import GovernanceConfig
 from governance_os.discovery import DiscoveryResult, discover, format_result
 

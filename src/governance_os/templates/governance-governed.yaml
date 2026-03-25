@@ -1,0 +1,15 @@
+# governance-os configuration — governed level
+pipelines_dir: governance/pipelines
+contracts_glob: "**/*.md"
+
+# Governed level activates authority and registry features
+authority:
+  required_roots:
+    - governance.yaml
+    - governance/pipelines/
+
+registry:
+  snapshot_path: artifacts/governance/registry.json
+
+audit:
+  enabled: true

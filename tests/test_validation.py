@@ -12,49 +12,90 @@ from governance_os.validation.schema import ALLOWED_STAGES, validate_pipeline, v
 
 def _valid(id_="001", slug="foo", stage="establish"):
     return Pipeline(
-        numeric_id=id_, slug=slug, path=Path(f"{id_}--{slug}.md"),
-        title="Title", stage=stage, purpose="Does stuff.",
-        outputs=["artifacts/out.json"], success_criteria=["works"],
+        numeric_id=id_,
+        slug=slug,
+        path=Path(f"{id_}--{slug}.md"),
+        title="Title",
+        stage=stage,
+        purpose="Does stuff.",
+        outputs=["artifacts/out.json"],
+        success_criteria=["works"],
     )
 
 
 # --- schema ---
+
 
 def test_valid_pipeline_has_no_issues():
     assert validate_pipeline(_valid()) == []
 
 
 def test_missing_title():
-    p = Pipeline(numeric_id="001", slug="x", path=Path("001--x.md"),
-                 stage="establish", purpose="x", outputs=["y"], success_criteria=["z"])
+    p = Pipeline(
+        numeric_id="001",
+        slug="x",
+        path=Path("001--x.md"),
+        stage="establish",
+        purpose="x",
+        outputs=["y"],
+        success_criteria=["z"],
+    )
     codes = [i.code for i in validate_pipeline(p)]
     assert "MISSING_REQUIRED_FIELD" in codes
 
 
 def test_missing_stage():
-    p = Pipeline(numeric_id="001", slug="x", path=Path("001--x.md"),
-                 title="T", purpose="x", outputs=["y"], success_criteria=["z"])
+    p = Pipeline(
+        numeric_id="001",
+        slug="x",
+        path=Path("001--x.md"),
+        title="T",
+        purpose="x",
+        outputs=["y"],
+        success_criteria=["z"],
+    )
     codes = [i.code for i in validate_pipeline(p)]
     assert "MISSING_REQUIRED_FIELD" in codes
 
 
 def test_missing_purpose():
-    p = Pipeline(numeric_id="001", slug="x", path=Path("001--x.md"),
-                 title="T", stage="establish", outputs=["y"], success_criteria=["z"])
+    p = Pipeline(
+        numeric_id="001",
+        slug="x",
+        path=Path("001--x.md"),
+        title="T",
+        stage="establish",
+        outputs=["y"],
+        success_criteria=["z"],
+    )
     codes = [i.code for i in validate_pipeline(p)]
     assert "MISSING_REQUIRED_FIELD" in codes
 
 
 def test_missing_outputs():
-    p = Pipeline(numeric_id="001", slug="x", path=Path("001--x.md"),
-                 title="T", stage="establish", purpose="x", success_criteria=["z"])
+    p = Pipeline(
+        numeric_id="001",
+        slug="x",
+        path=Path("001--x.md"),
+        title="T",
+        stage="establish",
+        purpose="x",
+        success_criteria=["z"],
+    )
     codes = [i.code for i in validate_pipeline(p)]
     assert "MISSING_REQUIRED_FIELD" in codes
 
 
 def test_missing_success_criteria():
-    p = Pipeline(numeric_id="001", slug="x", path=Path("001--x.md"),
-                 title="T", stage="establish", purpose="x", outputs=["y"])
+    p = Pipeline(
+        numeric_id="001",
+        slug="x",
+        path=Path("001--x.md"),
+        title="T",
+        stage="establish",
+        purpose="x",
+        outputs=["y"],
+    )
     codes = [i.code for i in validate_pipeline(p)]
     assert "MISSING_REQUIRED_FIELD" in codes
 
@@ -102,6 +143,7 @@ def test_validate_pipelines_aggregates():
 
 
 # --- integrity ---
+
 
 def test_no_integrity_issues_for_unique_pipelines():
     pipelines = [_valid("001", "alpha"), _valid("002", "beta")]

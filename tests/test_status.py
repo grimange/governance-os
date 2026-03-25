@@ -9,9 +9,15 @@ from governance_os.validation.status_logic import classify
 
 def _valid(id_, slug, deps=None):
     return Pipeline(
-        numeric_id=id_, slug=slug, path=Path(f"pipelines/{id_}--{slug}.md"),
-        depends_on=deps or [], title="T", stage="establish",
-        purpose="P", outputs=["artifact"], success_criteria=["ok"],
+        numeric_id=id_,
+        slug=slug,
+        path=Path(f"pipelines/{id_}--{slug}.md"),
+        depends_on=deps or [],
+        title="T",
+        stage="establish",
+        purpose="P",
+        outputs=["artifact"],
+        success_criteria=["ok"],
     )
 
 

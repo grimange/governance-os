@@ -11,7 +11,7 @@ Classification is deterministic and derived solely from:
 
 from __future__ import annotations
 
-import networkx as nx
+from pathlib import Path
 
 from governance_os.graph.analysis import detect_cycles, direct_prerequisites
 from governance_os.graph.builder import build_graph
@@ -36,8 +36,6 @@ def classify(
         StatusResult with one StatusRecord per pipeline.
     """
     if not pipelines:
-        root = pipelines[0].path.parent if pipelines else None
-        from pathlib import Path
         return StatusResult(root=Path("."), records=[])
 
     root = pipelines[0].path.parent
@@ -96,7 +94,8 @@ def classify(
             # Check if any direct prerequisite is invalid or blocked.
             prereqs = direct_prerequisites(graph, pid)
             blocking = [
-                pr for pr in prereqs
+                pr
+                for pr in prereqs
                 if status_map.get(pr) in (PipelineStatus.INVALID, PipelineStatus.BLOCKED)
             ]
             if blocking:
@@ -133,5 +132,4 @@ def classify(
         for p in pipelines
     ]
 
-    from pathlib import Path as _Path
-    return StatusResult(root=_Path(root), records=records)
+    return StatusResult(root=Path(root), records=records)

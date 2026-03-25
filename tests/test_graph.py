@@ -15,7 +15,9 @@ from governance_os.models.pipeline import Pipeline
 
 def _p(id_, slug, deps=None):
     return Pipeline(
-        numeric_id=id_, slug=slug, path=Path(f"pipelines/{id_}--{slug}.md"),
+        numeric_id=id_,
+        slug=slug,
+        path=Path(f"pipelines/{id_}--{slug}.md"),
         depends_on=deps or [],
     )
 
