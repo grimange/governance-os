@@ -7,6 +7,59 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.0] — 2026-03-26
+
+### Added
+
+#### Phase 0 — Contract Foundation
+
+- `contracts/failure_codes.py` — `FailureCode(StrEnum)` with 7 canonical codes: `TOOLING_UNAVAILABLE_FAIL_CLOSED`, `TOOL_POLICY_VIOLATION`, `TOOL_BYPASS_DETECTED`, `SEQUENCE_VIOLATION`, `EVIDENCE_MISSING`, `TEST_EXECUTION_MISSING`, `CONTRACT_INPUT_INVALID`
+- `contracts/tool_policy.py` — `ToolPolicy` frozen Pydantic model with built-in policies `READ_ONLY_AUDIT`, `STANDARD_CODE_CHANGE`, `HIGH_ASSURANCE_RELEASE`; `POLICY_REGISTRY` dict
+- `contracts/execution_trace.py` — `ExecutionTrace` with `ToolCallRecord`, `FileChangeRecord`; 6-stage `LifecycleStage` progression; `.save()/.load()/.exists()` persistence to `artifacts/governance/mcp-runs/<run_id>/trace.json`; fail-closed mutation guards
+
+#### Phase 1 — Minimal MCP Server
+
+- `govos_get_task_contract` — loads pipeline contract, initialises ExecutionTrace with fresh run_id
+- `govos_read_repo_map` — returns all pipeline lifecycle states; advances to CONTEXT_ACQUIRED
+- `govos_write_patch` — managed file write with path traversal guard; records FileChangeRecord(via_managed_patch=True)
+- `govos_finalize_result` — finalizes trace, runs governance validator, records result
+- `mcp/server.py` — FastMCP "governance-os-mcp" registering all 10 tools; `govos-mcp` entry point
+
+#### Phase 2 — Validation Layer
+
+- `runtime/validator.py` — `validate(trace, policy) → ValidationResult`; 6 enforcement rules: required tools, required sequence, unmanaged write detection, finalization, evidence presence, test execution
+
+#### Phase 3 — Codex Integration
+
+- `.codex/config.toml` — MCP server registration, approval posture (require_approval_for file_write/shell_exec/git_write), default policy mode
+- `.codex/rules.toml` — rules restricting unmanaged writes, destructive git operations, arbitrary shell, direct patch application
+
+#### Phase 4 — Tool Surface Expansion
+
+- `govos_search_code` — bounded regex file search (no shell invocation)
+- `govos_get_file_context` — read-only file context with path traversal guard and line-range slicing
+- `govos_run_tests` — bounded pytest execution (restricted flags allowlist); advances to VERIFICATION_COMPLETED
+- `govos_run_lint` — bounded ruff check execution
+- `govos_record_evidence` — evidence reference recording; rejects empty refs and finalized runs; advances to EVIDENCE_RECORDED
+- `govos_git_status` — read-only git status + branch; bounded to `git status --short` only
+
+#### Phase 5 — Lifecycle Integration
+
+- Trace persistence at `artifacts/governance/mcp-runs/<run_id>/` aligns with v0.8 pipeline lifecycle marker convention
+- `govos_read_repo_map` exposes full pipeline lifecycle state (effective_state, drift, reasons) to MCP agents
+
+#### Tests
+
+- `tests/test_contracts.py` — 37 tests: FailureCode, ToolPolicy, built-in policies, ExecutionTrace, lifecycle, persistence
+- `tests/test_validator.py` — 30 tests: all 6 validator rules (pass + fail), full-run integration scenarios
+- `tests/test_mcp_tools.py` — 33 tests: all Phase 1/4 tools, path traversal rejection, finalization guards, MCP server registration
+
+### Changed
+
+- `pyproject.toml` — added `mcp = ["mcp>=1.0.0"]` optional dependency; `govos-mcp` script entry point
+
+---
+
 ## [0.8.0] — 2026-03-26
 
 ### Added

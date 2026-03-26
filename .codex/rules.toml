@@ -1,0 +1,83 @@
+# governance-os Codex rules — governance boundary enforcement
+#
+# These rules restrict unmanaged actions that would bypass the governed tool surface.
+# Violations of these rules constitute TOOL_BYPASS_DETECTED in the governance model.
+#
+# ASSUMPTION: Rule syntax follows the Codex rules format.
+# If rule DSL differs, treat this file as an authoritative specification of
+# the intended restrictions and adapt syntax to the deployed Codex version.
+
+# ---------------------------------------------------------------------------
+# File write restrictions
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "no-unmanaged-file-write"
+description = """
+All file writes must go through govos_write_patch.
+Direct file writes (cat, echo >, tee, sed -i, awk, etc.) bypass governance tracing
+and will be classified as TOOL_BYPASS_DETECTED at finalization.
+"""
+# Deny direct file mutation outside the governed tool surface.
+deny = ["file_write"]
+except_tool = "govos_write_patch"
+failure_code = "TOOL_BYPASS_DETECTED"
+
+# ---------------------------------------------------------------------------
+# Git write restrictions
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "no-unmanaged-git-write"
+description = """
+Destructive git operations are forbidden outside explicit governance approval.
+git push --force, git reset --hard, git branch -D, and git clean -f
+bypass governance intent and must not be used in governed runs.
+"""
+deny_patterns = [
+  "git push --force",
+  "git push -f",
+  "git reset --hard",
+  "git branch -D",
+  "git clean -f",
+  "git clean -fd",
+]
+failure_code = "TOOL_BYPASS_DETECTED"
+
+# ---------------------------------------------------------------------------
+# Shell execution restrictions
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "no-arbitrary-shell"
+description = """
+Arbitrary shell execution (bash -c, sh -c, eval, exec) is forbidden in governed runs.
+All governed actions must be invoked through specific MCP tools that record their
+actions in the execution trace.
+"""
+deny_patterns = [
+  "bash -c",
+  "sh -c",
+  "/bin/bash",
+  "/bin/sh",
+  "eval ",
+  "exec ",
+]
+failure_code = "TOOL_BYPASS_DETECTED"
+
+# ---------------------------------------------------------------------------
+# Direct patch application
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "no-direct-patch-apply"
+description = """
+Applying patches directly (patch -p, git apply) bypasses governance tracing.
+Use govos_write_patch for all managed file changes.
+"""
+deny_patterns = [
+  "patch -p",
+  "git apply",
+  "git am",
+]
+failure_code = "TOOL_BYPASS_DETECTED"

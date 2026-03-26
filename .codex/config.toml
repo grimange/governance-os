@@ -1,0 +1,73 @@
+# governance-os Codex integration configuration
+#
+# This file registers the governance-os MCP server with Codex
+# and configures execution policy for governed runs.
+#
+# ASSUMPTION: Codex MCP server registration syntax follows the convention
+# documented in https://platform.openai.com/docs/guides/codex.
+# If the syntax differs from the deployed Codex version, update the
+# [mcp_servers] block accordingly. All other settings are standard TOML.
+
+[profile]
+# Governance profile active for Codex runs in this repository.
+# Maps to governance_os.contracts.tool_policy.POLICY_REGISTRY keys.
+# Options: "read_only_audit", "standard_code_change", "high_assurance_release"
+governance_mode = "standard_code_change"
+
+# ---------------------------------------------------------------------------
+# MCP server registration
+# ---------------------------------------------------------------------------
+
+[mcp_servers.governance-os]
+# Command to launch the governance-os MCP server.
+# FastMCP servers communicate over stdio by default.
+command = "python"
+args = ["-m", "governance_os.mcp.server"]
+
+# The server is required: Codex must connect before issuing any tool calls.
+# If the server is unavailable, the run must fail closed.
+required = true
+
+# Tools exposed by this server (Phase 1 required surface + Phase 4 expansion).
+# This list is informational — the server advertises its own tools at runtime.
+tools = [
+  "govos_get_task_contract",
+  "govos_read_repo_map",
+  "govos_write_patch",
+  "govos_finalize_result",
+  "govos_search_code",
+  "govos_get_file_context",
+  "govos_run_tests",
+  "govos_run_lint",
+  "govos_record_evidence",
+  "govos_git_status",
+]
+
+# ---------------------------------------------------------------------------
+# Approval posture
+# ---------------------------------------------------------------------------
+
+[sandbox]
+# Codex sandbox settings for governance-aligned execution.
+# Conservative: require explicit approval for any action not routed through
+# a governed MCP tool.
+
+# Require approval for file writes not via govos_write_patch.
+# ASSUMPTION: field name "require_approval_for" is a Codex sandbox setting.
+# If not supported, implement equivalent restriction via rules.toml.
+require_approval_for = ["file_write", "shell_exec", "git_write"]
+
+# Allow read-only shell operations (git status, grep) without approval.
+allow_readonly_shell = true
+
+# ---------------------------------------------------------------------------
+# Run context
+# ---------------------------------------------------------------------------
+
+[run_context]
+# Repository root is passed as the `root` parameter to all governed tools.
+# The MCP server resolves paths relative to this root.
+repo_root = "."
+
+# Default policy mode for runs that do not explicitly specify one.
+default_policy_mode = "standard_code_change"
