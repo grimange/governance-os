@@ -16,6 +16,8 @@ from governance_os.audit.core import (
     audit_multi_agent,
     audit_readiness,
 )
+from governance_os.lifecycle.core import LifecycleResult, classify_lifecycle
+from governance_os.models.lifecycle import LifecycleRecord
 from governance_os.authority.core import AuthorityResult, verify_authority
 from governance_os.config import GovernanceConfig, load_config
 from governance_os.config.loader import resolve_pipelines_dir
@@ -133,6 +135,7 @@ def _load_pipelines(
                 implementation_notes=contract.implementation_notes,
                 success_criteria=contract.success_criteria,
                 out_of_scope=contract.out_of_scope,
+                declared_state=contract.declared_state,
             )
         )
 
@@ -619,6 +622,54 @@ def score(
         delta=deltas,
         formula_explanation=FORMULA_EXPLANATION,
     )
+
+
+# ---------------------------------------------------------------------------
+# Public API — pipeline lifecycle commands (v0.8)
+# ---------------------------------------------------------------------------
+
+
+def pipeline_lifecycle(
+    root: Path | str,
+    config: GovernanceConfig | None = None,
+) -> LifecycleResult:
+    """Classify all pipelines into lifecycle states.
+
+    Infers the effective lifecycle state of each pipeline from marker files,
+    declared state in the contract, schema validity, and dependency graph state.
+
+    Args:
+        root: Repo root directory.
+        config: Optional pre-loaded config.
+
+    Returns:
+        LifecycleResult with one LifecycleRecord per discovered pipeline.
+    """
+    root = Path(root)
+    pipelines, parse_errors = _load_pipelines(root, config)
+    return classify_lifecycle(pipelines, root, extra_issues=parse_errors)
+
+
+def pipeline_lifecycle_status(
+    root: Path | str,
+    pipeline_id: str,
+    config: GovernanceConfig | None = None,
+) -> LifecycleRecord | None:
+    """Return the lifecycle record for a single pipeline by ID.
+
+    Args:
+        root: Repo root directory.
+        pipeline_id: Numeric pipeline ID (e.g. "001") or slug.
+        config: Optional pre-loaded config.
+
+    Returns:
+        LifecycleRecord for the matching pipeline, or None if not found.
+    """
+    result = pipeline_lifecycle(Path(root), config)
+    for record in result.records:
+        if record.pipeline_id == pipeline_id or record.slug == pipeline_id:
+            return record
+    return None
 
 
 # ---------------------------------------------------------------------------

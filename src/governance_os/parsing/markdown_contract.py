@@ -53,6 +53,9 @@ _LABEL_MAP: dict[str, str] = {
     "implementation notes": "implementation_notes",
     "success criteria": "success_criteria",
     "out of scope": "out_of_scope",
+    # Lifecycle fields
+    "state": "declared_state",
+    "lifecycle state": "declared_state",
 }
 
 _md = MarkdownIt()
@@ -78,6 +81,7 @@ class ParsedContract:
     implementation_notes: str = ""
     success_criteria: list[str] = field(default_factory=list)
     out_of_scope: list[str] = field(default_factory=list)
+    declared_state: str = ""
     issues: list[ParseIssue] = field(default_factory=list)
 
 

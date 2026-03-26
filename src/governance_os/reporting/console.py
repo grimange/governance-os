@@ -10,6 +10,7 @@ from __future__ import annotations
 from governance_os.audit.core import AuditResult
 from governance_os.authority.core import AuthorityResult
 from governance_os.discovery.candidates import CandidateResult
+from governance_os.models.lifecycle import LifecycleRecord, LifecycleResult
 from governance_os.models.result import PortabilityResult, ScanResult, VerifyResult
 from governance_os.models.score import ScoreResult
 from governance_os.models.status import StatusResult
@@ -158,6 +159,40 @@ def format_score(result: ScoreResult, explain: bool = False) -> str:
                 f"  {d.category}: {d.previous_score} -> {d.current_score} ({sign}{d.change})"
             )
 
+    return "\n".join(lines)
+
+
+def format_lifecycle(result: LifecycleResult) -> str:
+    if not result.records:
+        return "No pipelines found."
+    lines: list[str] = []
+    for record in result.records:
+        drift_marker = " [DRIFT]" if record.drift else ""
+        decl = f"  declared={record.declared_state}" if record.declared_state else ""
+        lines.append(
+            f"  [{record.pipeline_id}] {record.slug}  {record.effective_state.value}{drift_marker}{decl}"
+        )
+        for reason in record.reasons:
+            lines.append(f"    — {reason}")
+    drifted = result.drifted
+    if drifted:
+        lines.append(f"\n{len(drifted)} pipeline(s) have lifecycle drift.")
+    return "\n".join(lines)
+
+
+def format_lifecycle_record(record: LifecycleRecord) -> str:
+    lines = [
+        f"[{record.pipeline_id}] {record.slug}",
+        f"  effective: {record.effective_state.value}",
+    ]
+    if record.declared_state:
+        lines.append(f"  declared:  {record.declared_state}")
+    if record.drift:
+        lines.append(
+            f"  DRIFT: declared='{record.declared_state}' effective='{record.effective_state}'"
+        )
+    for reason in record.reasons:
+        lines.append(f"  — {reason}")
     return "\n".join(lines)
 
 

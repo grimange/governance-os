@@ -7,6 +7,40 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.0] — 2026-03-26
+
+### Added
+
+- **Pipeline lifecycle state machine** — 7 canonical states: `draft`, `ready`, `active`, `blocked`, `completed`, `failed`, `archived`; deterministic, fully explainable inference with no side effects
+- **`Pipeline.declared_state`** — new optional field populated from `State:` or `Lifecycle State:` in pipeline contracts; empty string when absent
+- **`State:` / `Lifecycle State:` parser support** — `markdown_contract.py` extended to recognise inline (`State: active`) and heading-style (`### Lifecycle State\ncompleted`) forms
+- **Marker file protocol** — three filesystem markers drive runtime inference: `artifacts/governance/failures/<id>.md` → FAILED; `artifacts/governance/blocks/<id>.md` → BLOCKED (external); `artifacts/governance/runs/<id>/` directory → ACTIVE
+- **`classify_lifecycle(pipelines, root, extra_issues)` → `LifecycleResult`** — core inference engine in `lifecycle/core.py`; uses iterative topological passes to propagate dependency state; unresolved cycles → BLOCKED
+- **`lifecycle_issues(result)` → `list[Issue]`** — derives `LIFECYCLE_DRIFT` (WARNING), `LIFECYCLE_FAILED` (ERROR), `LIFECYCLE_INVALID_DECLARED_STATE` (WARNING) Issue records from a LifecycleResult for integration with audit/preflight
+- **`LifecycleResult`** model — aggregated lifecycle report; `.active`, `.blocked`, `.failed`, `.completed`, `.draft`, `.ready`, `.drifted` convenience properties
+- **`LifecycleRecord`** model (frozen) — per-pipeline record: `pipeline_id`, `slug`, `path`, `declared_state`, `effective_state`, `drift`, `reasons`
+- **Drift detection** — `drift=True` when `declared_state` is a recognised value and differs from `effective_state`; unrecognised declared values are flagged as `LIFECYCLE_INVALID_DECLARED_STATE` but not counted as drift
+- **`api.pipeline_lifecycle(root, config)` → `LifecycleResult`** — classifies all pipelines
+- **`api.pipeline_lifecycle_status(root, pipeline_id, config)` → `LifecycleRecord | None`** — returns record for a single pipeline by numeric ID or slug
+- **`govos pipeline list [PATH] [--json]`** — lists all pipelines with effective lifecycle state and drift markers
+- **`govos pipeline status <id> [--root PATH] [--json]`** — shows effective state, declared state, drift, and reasons for one pipeline
+- **`govos pipeline verify <id> [--root PATH]`** — exits 0 if lifecycle state is consistent, 1 if drift detected
+- **Console formatters** `format_lifecycle()` and `format_lifecycle_record()` in `reporting/console.py`
+- **JSON serialisers** `lifecycle_to_json()` and `lifecycle_record_to_json()` in `reporting/json_report.py`
+- 57 new tests covering all 7 lifecycle states, marker file behavior, dep propagation, drift detection, parser extension, API functions, console formatting, JSON output (519 total)
+
+### Inference priority order (deterministic)
+1. Failure marker → FAILED (objective filesystem evidence, overrides declared)
+2. Declared `archived` → ARCHIVED (author-terminal)
+3. Declared `completed` → COMPLETED (author-terminal)
+4. Block marker → BLOCKED (external block)
+5. Schema errors → DRAFT (contract not ready)
+6. Blocking dependency (DRAFT/BLOCKED/FAILED dep) → BLOCKED (propagated)
+7. Run directory marker → ACTIVE (execution in progress)
+8. No blockers → READY
+
+---
+
 ## [0.7.0] — 2026-03-26
 
 ### Added

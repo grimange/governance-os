@@ -14,6 +14,7 @@ from governance_os.audit.core import AuditResult
 from governance_os.authority.core import AuthorityResult
 from governance_os.discovery.candidates import CandidateResult
 from governance_os.models.issue import Issue
+from governance_os.models.lifecycle import LifecycleRecord, LifecycleResult
 from governance_os.models.pipeline import Pipeline
 from governance_os.models.result import PortabilityResult, ScanResult, VerifyResult
 from governance_os.models.score import ScoreResult
@@ -278,6 +279,28 @@ def score_to_json(result: ScoreResult) -> dict[str, Any]:
         "prioritized_findings": prioritized,
         "derived_insights": insights,
         "delta": delta,
+    }
+
+
+def lifecycle_record_to_json(record: LifecycleRecord) -> dict[str, Any]:
+    return {
+        "pipeline_id": record.pipeline_id,
+        "slug": record.slug,
+        "path": str(record.path),
+        "declared_state": record.declared_state,
+        "effective_state": record.effective_state.value,
+        "drift": record.drift,
+        "reasons": record.reasons,
+    }
+
+
+def lifecycle_to_json(result: LifecycleResult) -> dict[str, Any]:
+    return {
+        "command": "pipeline lifecycle",
+        "root": str(result.root),
+        "record_count": len(result.records),
+        "drift_count": len(result.drifted),
+        "records": [lifecycle_record_to_json(r) for r in result.records],
     }
 
 

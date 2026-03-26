@@ -29,6 +29,9 @@ class Pipeline(BaseModel):
     success_criteria: list[str] = []
     out_of_scope: list[str] = []
 
+    # Lifecycle — declared state from contract (may be empty string)
+    declared_state: str = ""
+
     # Attached parse/validation issues
     issues: list[Issue] = []
 

@@ -9,6 +9,8 @@ from governance_os.reporting.console import (
     format_audit,
     format_authority,
     format_candidates,
+    format_lifecycle,
+    format_lifecycle_record,
     format_portability,
     format_preflight,
     format_registry,
@@ -22,6 +24,8 @@ from governance_os.reporting.json_report import (
     audit_to_json,
     authority_to_json,
     candidates_to_json,
+    lifecycle_record_to_json,
+    lifecycle_to_json,
     portability_to_json,
     preflight_to_json,
     registry_to_json,
@@ -77,6 +81,9 @@ app.add_typer(doctrine_app, name="doctrine")
 
 profile_app = typer.Typer(help="Profile inspection and validation commands.")
 app.add_typer(profile_app, name="profile")
+
+pipeline_app = typer.Typer(help="Pipeline lifecycle commands.")
+app.add_typer(pipeline_app, name="pipeline")
 
 
 def _resolve_root(path: str) -> Path:
@@ -635,6 +642,70 @@ def profile_validate_cmd(
         for m in missing:
             typer.echo(f"  - {m}")
     raise typer.Exit(0 if not missing else 1)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline lifecycle commands
+# ---------------------------------------------------------------------------
+
+
+@pipeline_app.command("list")
+def pipeline_list_cmd(
+    path: str = typer.Argument(".", help="Root path to scan for pipeline contracts."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """List all pipelines with their effective lifecycle states."""
+    root = _resolve_root(path)
+    result = api.pipeline_lifecycle(root)
+    if json_output:
+        typer.echo(to_json_str(lifecycle_to_json(result)))
+        raise typer.Exit(0)
+    typer.echo(format_lifecycle(result))
+    raise typer.Exit(0)
+
+
+@pipeline_app.command("status")
+def pipeline_status_cmd(
+    pipeline_id: str = typer.Argument(..., help="Pipeline numeric ID or slug."),
+    path: str = typer.Option(".", "--root", help="Root path of the governance repo."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
+) -> None:
+    """Show the lifecycle status for a single pipeline."""
+    root = _resolve_root(path)
+    record = api.pipeline_lifecycle_status(root, pipeline_id)
+    if record is None:
+        typer.echo(f"Pipeline '{pipeline_id}' not found.", err=True)
+        raise typer.Exit(1)
+    if json_output:
+        typer.echo(to_json_str(lifecycle_record_to_json(record)))
+        raise typer.Exit(0)
+    typer.echo(format_lifecycle_record(record))
+    raise typer.Exit(0)
+
+
+@pipeline_app.command("verify")
+def pipeline_verify_cmd(
+    pipeline_id: str = typer.Argument(..., help="Pipeline numeric ID or slug."),
+    path: str = typer.Option(".", "--root", help="Root path of the governance repo."),
+) -> None:
+    """Verify lifecycle integrity for a single pipeline.
+
+    Exits 1 if the pipeline has lifecycle drift (declared != effective state).
+    """
+    root = _resolve_root(path)
+    record = api.pipeline_lifecycle_status(root, pipeline_id)
+    if record is None:
+        typer.echo(f"Pipeline '{pipeline_id}' not found.", err=True)
+        raise typer.Exit(1)
+    typer.echo(format_lifecycle_record(record))
+    if record.drift:
+        typer.echo(
+            f"\nFAIL — lifecycle drift: declared='{record.declared_state}' "
+            f"effective='{record.effective_state}'"
+        )
+        raise typer.Exit(1)
+    typer.echo("\nOK — lifecycle state is consistent.")
+    raise typer.Exit(0)
 
 
 if __name__ == "__main__":
