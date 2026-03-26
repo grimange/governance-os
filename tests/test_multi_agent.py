@@ -114,12 +114,42 @@ def test_multi_agent_workflow_contract_content(tmp_path):
 
 
 def test_multi_agent_is_invalid_for_generic_profile(tmp_path):
-    # multi-agent template with generic profile still scaffolds (profile overlay is codex-only)
-    result = init_repo(tmp_path, profile="generic", template="multi-agent")
-    # Generic profile doesn't scaffold .codex/agents/ — no profile overlay applied
-    assert not (tmp_path / ".codex" / "agents").exists()
-    assert result.profile == "generic"
-    assert result.template == "multi-agent"
+    with pytest.raises(ValueError, match="requires --profile codex"):
+        init_repo(tmp_path, profile="generic", template="multi-agent")
+
+
+def test_multi_agent_is_invalid_for_unknown_profile(tmp_path):
+    with pytest.raises(ValueError, match="requires --profile codex"):
+        init_repo(tmp_path, profile="unknown", template="multi-agent")
+
+
+def test_multi_agent_agents_md_references_role_contracts(tmp_path):
+    init_repo(tmp_path, profile="codex", template="multi-agent")
+    content = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "docs/governance/agents/" in content
+    assert "docs/contracts/multi-agent-workflow.md" in content
+
+
+def test_multi_agent_agents_md_references_all_roles(tmp_path):
+    init_repo(tmp_path, profile="codex", template="multi-agent")
+    content = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "planner" in content
+    assert "implementer" in content
+    assert "reviewer" in content
+
+
+def test_multi_agent_agents_md_references_audit_command(tmp_path):
+    init_repo(tmp_path, profile="codex", template="multi-agent")
+    content = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "govos audit multi-agent" in content
+
+
+def test_minimal_template_agents_md_does_not_reference_roles(tmp_path):
+    """Non-multi-agent Codex repos should get the standard AGENTS.md."""
+    init_repo(tmp_path, profile="codex", template="minimal")
+    content = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "docs/governance/agents/" not in content
+    assert "planner" not in content
 
 
 def test_multi_agent_scaffold_is_idempotent(tmp_path):

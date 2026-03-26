@@ -146,6 +146,47 @@ govos profile validate # check repo conforms to active profile
 ```
 """
 
+_AGENTS_MD_MULTI_AGENT_TEMPLATE = """\
+# AGENTS.md — Codex Governance Instructions
+
+This repository uses governance-os for pipeline contract management with role-specialized agents.
+
+## Governance Structure
+
+- Pipeline contracts: `governance/pipelines/`
+- Governance config: `governance.yaml`
+- Session contracts: `governance/sessions/`
+- Role contracts: `docs/governance/agents/`
+- Workflow contract: `docs/contracts/multi-agent-workflow.md`
+
+## Roles
+
+See `docs/governance/agents/` for full role contracts.
+
+| Role | Responsibilities |
+|---|---|
+| `planner` | Decomposes work into pipeline contracts; deposits handoff in `artifacts/governance/handoffs/` |
+| `implementer` | Executes work per approved contracts; requests review in `artifacts/governance/reviews/` |
+| `reviewer` | Validates outputs against contracts; records outcome in `artifacts/governance/reviews/` |
+
+## Rules
+
+1. Do not modify pipeline contracts without explicit authorization.
+2. All pipeline outputs must be declared in the contract.
+3. Dependencies must reference numeric pipeline IDs, not file paths.
+4. Run `govos preflight` before making governance-affecting changes.
+5. Each role must operate within its defined scope — see role contract for forbidden actions.
+
+## Quick Reference
+
+```
+govos scan                  # discover all pipeline contracts
+govos verify                # validate contracts and dependency graph
+govos preflight             # fail-closed readiness gate
+govos audit multi-agent     # validate multi-agent structure
+```
+"""
+
 # .codex/config.toml — written for all codex templates
 _CODEX_CONFIG_TOML = """\
 # .codex/config.toml — Codex governance profile configuration
@@ -518,6 +559,14 @@ def init_repo(
                 f"Invalid template: {template!r}. "
                 f"Supported templates: {', '.join(sorted(VALID_TEMPLATES))}"
             )
+        # multi-agent is codex-only — reject generic+multi-agent before normalising profile
+        if template == "multi-agent":
+            resolved_profile = profile if profile in (p.value for p in InitProfile) else "generic"
+            if resolved_profile != InitProfile.CODEX:
+                raise ValueError(
+                    "The 'multi-agent' template requires --profile codex. "
+                    "Use: govos init --profile codex --template multi-agent"
+                )
         # "multi-agent" builds on the governed base level
         effective_level = "governed" if template == "multi-agent" else template
     else:
@@ -627,7 +676,8 @@ def _apply_profile(
             root / "governance" / "sessions" / "session-template.md",
             _CODEX_SESSION_TEMPLATE,
         )
-        _write_file(result, root / "AGENTS.md", _AGENTS_MD_TEMPLATE)
+        agents_md = _AGENTS_MD_MULTI_AGENT_TEMPLATE if template == "multi-agent" else _AGENTS_MD_TEMPLATE
+        _write_file(result, root / "AGENTS.md", agents_md)
         _write_file(result, root / ".codex" / "config.toml", _CODEX_CONFIG_TOML)
 
         # Codex governed: add a concrete preflight skill
