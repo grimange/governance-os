@@ -47,6 +47,18 @@ def resolve_profile(profile_id: str | None) -> ProfileDefinition:
     return PROFILES.get(profile_id, GENERIC)
 
 
+def is_known_profile(profile_id: str) -> bool:
+    """Return True if *profile_id* is registered in the profile registry.
+
+    Args:
+        profile_id: Profile identifier to check (e.g. "generic", "codex").
+
+    Returns:
+        True when the profile is registered; False otherwise.
+    """
+    return profile_id in PROFILES
+
+
 def list_profiles() -> list[ProfileDefinition]:
     """Return all registered profiles in insertion order."""
     return list(PROFILES.values())

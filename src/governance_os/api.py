@@ -41,10 +41,18 @@ from governance_os.models.score import PrioritizedFinding, ScoreResult
 from governance_os.models.status import StatusResult
 from governance_os.parsing.filenames import parse_filenames
 from governance_os.parsing.markdown_contract import ParseIssue, parse_contract
-from governance_os.plugins.registry import run_plugin_checks
+from governance_os.plugins.base import Plugin
+from governance_os.plugins.registry import (
+    PLUGIN_REGISTRY,
+    is_known_plugin,
+    list_plugins,
+    run_plugin_checks,
+    validate_plugin_ids,
+)
 from governance_os.preflight.core import PreflightResult
 from governance_os.profiles.definitions import ProfileDefinition
 from governance_os.profiles.registry import (
+    is_known_profile,
     list_profiles,
     resolve_profile,
     validate_profile_surfaces,
@@ -390,7 +398,7 @@ def audit(
 
     Args:
         root: Repo root directory.
-        mode: Audit mode — "readiness", "coverage", or "drift".
+        mode: Audit mode — "readiness", "coverage", "drift", or "multi-agent".
         config: Optional pre-loaded config.
 
     Returns:
@@ -722,3 +730,29 @@ def profile_validate(
     profile = resolve_profile(config.profile)
     missing = validate_profile_surfaces(root, profile)
     return profile, missing
+
+
+# ---------------------------------------------------------------------------
+# Public API — plugin commands (v0.9)
+# ---------------------------------------------------------------------------
+
+
+def plugin_list() -> list[Plugin]:
+    """Return all registered governance plugins.
+
+    Returns:
+        List of Plugin objects in registration order.
+    """
+    return list_plugins()
+
+
+def plugin_show(plugin_id: str) -> Plugin | None:
+    """Return the Plugin for *plugin_id*, or None if unknown.
+
+    Args:
+        plugin_id: Plugin identifier (e.g. "authority", "skills").
+
+    Returns:
+        Plugin instance or None if not found.
+    """
+    return PLUGIN_REGISTRY.get(plugin_id)

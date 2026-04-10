@@ -119,7 +119,8 @@ def test_multi_agent_is_invalid_for_generic_profile(tmp_path):
 
 
 def test_multi_agent_is_invalid_for_unknown_profile(tmp_path):
-    with pytest.raises(ValueError, match="requires --profile codex"):
+    # Unknown profile fails on profile validation before reaching template check
+    with pytest.raises(ValueError, match="Invalid profile"):
         init_repo(tmp_path, profile="unknown", template="multi-agent")
 
 

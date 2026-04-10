@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from governance_os.models.issue import Issue
+from governance_os.models.issue import Issue, Severity
 from governance_os.models.pipeline import Pipeline
 
 
@@ -35,8 +35,6 @@ class VerifyResult(BaseModel):
 
     @property
     def error_count(self) -> int:
-        from governance_os.models.issue import Severity
-
         return sum(1 for i in self.issues if i.severity == Severity.ERROR)
 
     @property
@@ -52,4 +50,9 @@ class PortabilityResult(BaseModel):
 
     @property
     def passed(self) -> bool:
-        return len(self.issues) == 0
+        """True when no ERROR-severity findings are present.
+
+        Consistent with VerifyResult.passed — only ERROR issues block.
+        WARNING and INFO issues are advisory and do not cause failure.
+        """
+        return not any(i.severity == Severity.ERROR for i in self.issues)

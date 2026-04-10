@@ -50,7 +50,16 @@ from governance_os.reporting.markdown import (
     verify_report,
     write_report,
 )
-from governance_os.scaffolding.init import format_result, init_repo, validate_doctrine
+from governance_os.scaffolding.init import (
+    ConflictPolicy,
+    execute_plan,
+    format_plan,
+    format_result,
+    init_repo,
+    plan_scaffold,
+    validate_doctrine,
+    validate_scaffold,
+)
 
 app = typer.Typer(
     name="govos",
@@ -84,6 +93,9 @@ app.add_typer(profile_app, name="profile")
 
 pipeline_app = typer.Typer(help="Pipeline lifecycle commands.")
 app.add_typer(pipeline_app, name="pipeline")
+
+plugin_app = typer.Typer(help="Plugin inspection commands.")
+app.add_typer(plugin_app, name="plugin")
 
 
 def _resolve_root(path: str) -> Path:
@@ -127,28 +139,53 @@ def init(
     with_doctrine: bool = typer.Option(
         False, "--with-doctrine", help="Scaffold an optional doctrine file."
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be created without writing any files."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite existing files instead of skipping them."
+    ),
 ) -> None:
     """Initialize a governance-os repo with default structure.
 
     Use --profile to select the environment convention and --template to select
-    the scaffold surface area.
+    the scaffold surface area. Use --dry-run to preview changes without writing.
+    Use --force to overwrite existing files.
 
     Examples:
       govos init --profile generic --template minimal
       govos init --profile codex --template minimal
       govos init --profile codex --template governed
+      govos init --dry-run
+      govos init --force
     """
+    root = _resolve_root(path)
+    # Resolve effective template: explicit --template takes precedence over --level
+    effective_template = template if template is not None else level
     try:
-        result = init_repo(
-            _resolve_root(path),
-            level=level,
-            profile=profile,
-            with_doctrine=with_doctrine,
-            template=template,
-        )
+        plan = plan_scaffold(root, profile=profile, template=effective_template, with_doctrine=with_doctrine)
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(2)  # usage/input error
+
+    if dry_run:
+        typer.echo(format_plan(plan, check_existing=True))
+        raise typer.Exit(0)
+
+    conflict = ConflictPolicy.OVERWRITE if force else ConflictPolicy.SKIP
+    try:
+        result = execute_plan(plan, conflict=conflict)
+    except FileExistsError as exc:
+        typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
+
+    issues = validate_scaffold(root, plan)
+    if issues:
+        from governance_os.models.issue import Severity
+        for issue in issues:
+            severity_label = "WARN" if issue.severity == Severity.WARNING else issue.severity.upper()
+            typer.echo(f"  [{severity_label}] {issue.message}", err=True)
+
     typer.echo(format_result(result))
 
 
@@ -507,9 +544,10 @@ def skills_index(
         data = skills_to_json(result)
         typer.echo(to_json_str(data))
         _maybe_write_json(data, out)
-        return
+        raise typer.Exit(0)
     typer.echo(format_skills(result))
     _maybe_write(skills_report(result), out)
+    raise typer.Exit(0)
 
 
 @skills_app.command("verify")
@@ -587,8 +625,8 @@ def profile_show_cmd(
     """Show details of a specific governance profile."""
     profile = api.profile_show(profile_id)
     if profile is None:
-        typer.echo(f"Profile not found: {profile_id!r}")
-        raise typer.Exit(1)
+        typer.echo(f"Profile not found: {profile_id!r}", err=True)
+        raise typer.Exit(2)  # usage/input error
 
     typer.echo(f"Profile: {profile.id}")
     typer.echo(f"  Name: {profile.name}")
@@ -675,7 +713,7 @@ def pipeline_status_cmd(
     record = api.pipeline_lifecycle_status(root, pipeline_id)
     if record is None:
         typer.echo(f"Pipeline '{pipeline_id}' not found.", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(2)  # usage/input error
     if json_output:
         typer.echo(to_json_str(lifecycle_record_to_json(record)))
         raise typer.Exit(0)
@@ -691,12 +729,13 @@ def pipeline_verify_cmd(
     """Verify lifecycle integrity for a single pipeline.
 
     Exits 1 if the pipeline has lifecycle drift (declared != effective state).
+    Exits 2 if the pipeline ID is not found.
     """
     root = _resolve_root(path)
     record = api.pipeline_lifecycle_status(root, pipeline_id)
     if record is None:
         typer.echo(f"Pipeline '{pipeline_id}' not found.", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(2)  # usage/input error
     typer.echo(format_lifecycle_record(record))
     if record.drift:
         typer.echo(
@@ -705,6 +744,38 @@ def pipeline_verify_cmd(
         )
         raise typer.Exit(1)
     typer.echo("\nOK — lifecycle state is consistent.")
+    raise typer.Exit(0)
+
+
+# ---------------------------------------------------------------------------
+# Plugin commands
+# ---------------------------------------------------------------------------
+
+
+@plugin_app.command("list")
+def plugin_list_cmd() -> None:
+    """List all registered governance plugins."""
+    plugins = api.plugin_list()
+    for p in plugins:
+        typer.echo(f"  [{p.plugin_id}] {p.name}")
+        typer.echo(f"    {p.description}")
+        typer.echo("")
+    raise typer.Exit(0)
+
+
+@plugin_app.command("show")
+def plugin_show_cmd(
+    plugin_id: str = typer.Argument(..., help="Plugin ID to show (e.g. authority, skills)."),
+) -> None:
+    """Show details of a specific governance plugin."""
+    plugin = api.plugin_show(plugin_id)
+    if plugin is None:
+        typer.echo(f"Plugin not found: {plugin_id!r}", err=True)
+        raise typer.Exit(2)  # usage/input error
+
+    typer.echo(f"Plugin: {plugin.plugin_id}")
+    typer.echo(f"  Name: {plugin.name}")
+    typer.echo(f"  Description: {plugin.description}")
     raise typer.Exit(0)
 
 

@@ -3,12 +3,29 @@
 Converts typed result objects into stable, machine-readable JSON structures.
 All serialisation goes through this module; CLI --json flags must not
 build JSON ad hoc.
+
+Report structure contract
+-------------------------
+Every top-level JSON result object includes:
+
+  schema_version  str   — Report schema version ("1").  Increment when the
+                          structure changes in a backwards-incompatible way.
+  command         str   — The govos sub-command that produced this report.
+  root            str   — Absolute path of the repository root.
+  passed          bool  — True when no ERROR-severity finding was produced.
+                          For informational commands (status, candidates,
+                          score) this is always True.
+
+Additional fields are command-specific and documented inline.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Any
+
+# Bump when a backwards-incompatible change is made to any report structure.
+_SCHEMA_VERSION = "1"
 
 from governance_os.audit.core import AuditResult
 from governance_os.authority.core import AuthorityResult
@@ -71,9 +88,12 @@ def _status_record(r: StatusRecord) -> dict[str, Any]:
 
 def scan_to_json(result: ScanResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "scan",
         "root": str(result.root),
+        "passed": result.passed,
         "total": result.total,
+        "error_count": len(result.parse_errors),
         "pipelines": [_pipeline(p) for p in result.pipelines],
         "parse_errors": [_issue(e) for e in result.parse_errors],
     }
@@ -81,6 +101,7 @@ def scan_to_json(result: ScanResult) -> dict[str, Any]:
 
 def verify_to_json(result: VerifyResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "verify",
         "root": str(result.root),
         "passed": result.passed,
@@ -92,8 +113,10 @@ def verify_to_json(result: VerifyResult) -> dict[str, Any]:
 
 def status_to_json(result: StatusResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "status",
         "root": str(result.root),
+        "passed": True,  # informational command — always exits 0
         "total": len(result.records),
         "records": [_status_record(r) for r in result.records],
     }
@@ -101,6 +124,7 @@ def status_to_json(result: StatusResult) -> dict[str, Any]:
 
 def portability_to_json(result: PortabilityResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "portability scan",
         "root": str(result.root),
         "passed": result.passed,
@@ -137,6 +161,7 @@ def _skill_entry(e: SkillEntry) -> dict[str, Any]:
 
 def registry_to_json(result: RegistryResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "registry",
         "root": str(result.root),
         "passed": result.passed,
@@ -148,6 +173,7 @@ def registry_to_json(result: RegistryResult) -> dict[str, Any]:
 
 def preflight_to_json(result: PreflightResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "preflight",
         "root": str(result.root),
         "passed": result.passed,
@@ -160,6 +186,7 @@ def preflight_to_json(result: PreflightResult) -> dict[str, Any]:
 
 def audit_to_json(result: AuditResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": f"audit {result.mode}",
         "root": str(result.root),
         "mode": result.mode,
@@ -173,6 +200,7 @@ def audit_to_json(result: AuditResult) -> dict[str, Any]:
 
 def authority_to_json(result: AuthorityResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "authority verify",
         "root": str(result.root),
         "passed": result.passed,
@@ -197,8 +225,10 @@ def candidates_to_json(result: CandidateResult) -> dict[str, Any]:
             }
         )
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "discover candidates",
         "root": str(result.root),
+        "passed": True,  # informational command — always exits 0
         "candidate_count": result.candidate_count,
         "candidates": candidates,
     }
@@ -206,6 +236,7 @@ def candidates_to_json(result: CandidateResult) -> dict[str, Any]:
 
 def skills_to_json(result: SkillsResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "skills",
         "root": str(result.root),
         "skills_dir": str(result.skills_dir) if result.skills_dir else None,
@@ -270,8 +301,10 @@ def score_to_json(result: ScoreResult) -> dict[str, Any]:
     ]
 
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "score",
         "root": str(result.root),
+        "passed": True,  # informational command — score does not fail-close
         "overall_score": result.overall_score,
         "grade": result.grade,
         "formula": result.formula_explanation,
@@ -296,10 +329,13 @@ def lifecycle_record_to_json(record: LifecycleRecord) -> dict[str, Any]:
 
 def lifecycle_to_json(result: LifecycleResult) -> dict[str, Any]:
     return {
+        "schema_version": _SCHEMA_VERSION,
         "command": "pipeline lifecycle",
         "root": str(result.root),
+        "passed": len(result.failed) == 0,
         "record_count": len(result.records),
         "drift_count": len(result.drifted),
+        "failed_count": len(result.failed),
         "records": [lifecycle_record_to_json(r) for r in result.records],
     }
 

@@ -26,6 +26,7 @@ The runtime provides:
 - **Init profiles and levels** — scaffold governance at different maturity levels
 - **Governance scoring** — explainable score across five categories with prioritized findings, cross-signal insights, and optional trend comparison (v0.4)
 - **Profile + plugin system** — lightweight, statically registered internal plugins driven by repo profile (v0.5)
+- **Pipeline lifecycle state machine** — infers effective pipeline state (draft, ready, active, blocked, completed, failed, archived) from marker files, contracts, and the dependency graph (v0.8)
 
 ---
 
@@ -257,7 +258,9 @@ The package runs with defaults if `governance.yaml` is absent.
 
 ## CLI Reference
 
-### `govos init [PATH] [--profile PROFILE] [--template TEMPLATE] [--with-doctrine]`
+All commands listed here are stable as of v0.9.0. The `govos-mcp` server entry point is available but documented separately — it is not a `govos` subcommand.
+
+### `govos init [PATH] [--profile PROFILE] [--template TEMPLATE] [--with-doctrine] [--dry-run] [--force]`
 
 Initialises a governance-os repo at PATH (default `.`).
 
@@ -266,11 +269,17 @@ govos init --profile generic --template minimal        # bare structure
 govos init --profile codex --template minimal          # Codex with minimal scaffold
 govos init --profile codex --template governed         # Codex with full governance surface
 govos init --profile codex --template multi-agent      # Codex with role-specialized agents
+govos init --dry-run                                   # preview without writing files
+govos init --force                                     # overwrite existing files
 ```
 
 **`--profile`:** `generic` (default) or `codex`
 
 **`--template`:** `minimal`, `governed`, or `multi-agent` (codex only)
+
+**`--dry-run`:** Print the full scaffold plan (directories and files) without writing anything to disk. Output is identical to what would be executed, making it safe to inspect before committing.
+
+**`--force`:** Overwrite existing files with planned content instead of skipping them (default behaviour is skip — safe for re-running on an existing repo).
 
 | Template | Creates |
 |---|---|
@@ -406,7 +415,6 @@ Computes an explainable governance score by running all checks and combining the
 | `readiness` | audit readiness (purpose, scope, success criteria, implementation notes) |
 | `coverage` | audit coverage (uncontracted pipeline surfaces) |
 | `drift` | audit drift (missing declared output artifacts) |
-| `multi-agent` | audit multi-agent setup (roles, contracts, workflow, artifact dirs) |
 | `authority` | authority validation issues |
 
 **Scoring formula:**
@@ -505,6 +513,7 @@ Plugins add optional validation checks on top of the core runtime. They are:
 | `doctrine` | governance doctrine files in `governance/doctrine/` |
 | `skills` | skill definitions in `governance/skills/` |
 | `codex_instructions` | `AGENTS.md` existence and content |
+| `multi_agent` | multi-agent Codex structure (role definitions, role contracts, workflow contract, artifact dirs) |
 
 ### Plugin activation (deterministic)
 
@@ -581,6 +590,32 @@ Exits `0` if all expected surfaces exist, `1` if any are missing.
 
 ---
 
+### `govos pipeline list [PATH] [--json]`
+
+Lists all pipelines with their effective lifecycle states. Infers state from marker files, contract declarations, schema validity, and dependency graph.
+
+**Lifecycle states:**
+
+| State | Meaning |
+|---|---|
+| `draft` | Contract has schema errors; required sections missing or invalid |
+| `ready` | All dependencies resolved; no blockers |
+| `active` | Run directory present at `artifacts/governance/runs/<id>/` |
+| `blocked` | A dependency is in a blocking state, or an external block marker exists |
+| `completed` | Declared completed in contract |
+| `failed` | Failure marker present at `artifacts/governance/failures/<id>.md` |
+| `archived` | Declared archived in contract |
+
+### `govos pipeline status PIPELINE_ID [--root PATH] [--json]`
+
+Shows the lifecycle status for a single pipeline. `PIPELINE_ID` is the numeric id (e.g. `001`) or slug.
+
+### `govos pipeline verify PIPELINE_ID [--root PATH]`
+
+Verifies lifecycle integrity for a single pipeline. Exits `1` if there is lifecycle drift (declared state in contract does not match the inferred effective state).
+
+---
+
 ## Python API
 
 ```python
@@ -619,6 +654,10 @@ score_with_delta = api.score(root, compare_path=Path("prev.json"))  # ScoreResul
 profiles         = api.profile_list()                       # list[ProfileDefinition]
 profile          = api.profile_show("codex")                # ProfileDefinition | None
 profile, missing = api.profile_validate(root)               # (ProfileDefinition, list[str])
+
+# v0.8 — Pipeline lifecycle
+lifecycle        = api.pipeline_lifecycle(root)             # LifecycleResult
+record           = api.pipeline_lifecycle_status(root, "001")  # LifecycleRecord | None
 ```
 
 All functions return typed Pydantic models. See `src/governance_os/models/` for full model definitions.
@@ -627,7 +666,9 @@ All functions return typed Pydantic models. See `src/governance_os/models/` for 
 
 ## Issue Codes
 
-All diagnostics use stable, machine-readable codes:
+All diagnostics use stable, machine-readable codes. Severity levels: **error** (causes exit 1), **warning** (logged, does not block pass), **info** (informational only).
+
+### Parse and contract validation
 
 | Code | Severity | Description |
 |---|---|---|
@@ -635,20 +676,102 @@ All diagnostics use stable, machine-readable codes:
 | `FILENAME_PARSE_ERROR` | error | Filename doesn't match `<id>--<slug>.md` |
 | `MISSING_REQUIRED_FIELD` | error | Required contract field is missing |
 | `INVALID_STAGE` | error | Stage not in allowed set |
+| `EMPTY_LIST_ENTRY` | warning | List field contains an empty entry |
+| `DUPLICATE_LIST_ENTRY` | warning | List field contains a duplicate entry |
 | `DUPLICATE_PIPELINE_ID` | error | Multiple pipelines share the same numeric id |
 | `UNRESOLVED_DEPENDENCY` | error | Depends on a non-existent pipeline |
 | `DEPENDENCY_CYCLE` | error | Circular dependency detected |
+
+### Portability
+
+| Code | Severity | Description |
+|---|---|---|
 | `ABSOLUTE_PATH` | error | Output path is absolute (not portable) |
-| `WINDOWS_DRIVE_PATH` | error | Output path contains Windows drive letter |
+| `WINDOWS_DRIVE_PATH` | error | Output path contains a Windows drive letter |
 | `PATH_TRAVERSAL` | error | Output path contains `../` traversal |
 | `HOME_RELATIVE_PATH` | error | Output path starts with `~` |
+
+### Registry
+
+| Code | Severity | Description |
+|---|---|---|
 | `REGISTRY_DUPLICATE_ID` | error | Registry has duplicate pipeline id |
-| `AUTHORITY_MISSING_ROOT` | error | Required authority file is missing |
-| `AUTHORITY_CONTRACT_IN_ARTIFACT_DIR` | error | Contract file inside generated directory |
-| `AUDIT_UNCONTRACTED_SURFACE` | warning | Pipeline-like directory without a contract |
-| `AUDIT_MISSING_OUTPUT` | warning | Declared output artifact does not exist |
+| `REGISTRY_FILE_INVALID` | error | Registry snapshot file is not valid JSON |
+| `REGISTRY_MISSING_STAGE` | warning | Registry entry is missing the stage field |
+| `REGISTRY_NO_OUTPUTS` | warning | Registry entry declares no outputs |
+| `REGISTRY_FILE_MISSING` | warning | Registry snapshot file does not exist |
 | `REGISTRY_STALE_ENTRY` | warning | Registry snapshot has entry no longer discovered |
 | `REGISTRY_UNTRACKED_PIPELINE` | warning | Discovered pipeline absent from registry snapshot |
+
+### Authority
+
+| Code | Severity | Description |
+|---|---|---|
+| `AUTHORITY_MISSING_ROOT` | error | Required authority file (`governance.yaml`) is missing |
+| `AUTHORITY_CONTRACT_IN_ARTIFACT_DIR` | error | Contract file is inside a generated/artifact directory |
+| `AUTHORITY_CONFIG_INVALID` | error | `governance.yaml` is present but not valid YAML |
+| `AUTHORITY_PATH_DEPENDENCY` | warning | Dependency reference uses a file path instead of a numeric id |
+| `AUTHORITY_CONFIG_DIR_MISSING` | warning | A directory configured in `governance.yaml` does not exist |
+
+### Audit readiness
+
+| Code | Severity | Description |
+|---|---|---|
+| `AUDIT_MISSING_PURPOSE` | warning | Contract has no Purpose section |
+| `AUDIT_MISSING_SCOPE` | info | Contract has no Scope section |
+| `AUDIT_WEAK_SUCCESS_CRITERIA` | info | Contract has only one success criterion |
+| `AUDIT_MISSING_IMPL_NOTES` | info | Contract has no Implementation Notes section |
+| `AUDIT_NO_PIPELINES` | warning | No pipeline contracts discovered |
+
+### Audit coverage and drift
+
+| Code | Severity | Description |
+|---|---|---|
+| `AUDIT_UNCONTRACTED_SURFACE` | warning | Pipeline-like directory without a governance contract |
+| `AUDIT_NO_SURFACES_FOUND` | info | No pipeline-like directories detected |
+| `AUDIT_MISSING_OUTPUT` | warning | Declared output artifact does not exist on disk |
+| `AUDIT_NO_DRIFT` | info | No declared output drift detected |
+
+### Multi-agent audit
+
+| Code | Severity | Description |
+|---|---|---|
+| `MULTIAGENT_MISSING_REVIEWER` | error | Reviewer role definition missing (role collapse risk) |
+| `MULTIAGENT_MISSING_WORKFLOW` | warning | `docs/contracts/multi-agent-workflow.md` is missing |
+| `MULTIAGENT_SETUP_MISSING` | warning | `.codex/agents/` directory does not exist |
+| `MULTIAGENT_MISSING_ROLE_DEF` | warning | A required role definition (`.codex/agents/<role>.toml`) is missing |
+| `MULTIAGENT_MISSING_ROLE_CONTRACT` | warning | A role governance contract (`docs/governance/agents/<role>.md`) is missing |
+| `MULTIAGENT_EMPTY_ROLE_CONTRACT` | warning | A role governance contract exists but is empty |
+| `MULTIAGENT_ROLE_MISMATCH` | warning | Role has a `.toml` definition but no matching governance contract |
+| `MULTIAGENT_MISSING_HANDOFFS_DIR` | info | `artifacts/governance/handoffs/` directory not found |
+| `MULTIAGENT_MISSING_REVIEWS_DIR` | info | `artifacts/governance/reviews/` directory not found |
+
+### Pipeline lifecycle
+
+| Code | Severity | Description |
+|---|---|---|
+| `LIFECYCLE_FAILED` | error | Pipeline is in FAILED state (failure marker present) |
+| `LIFECYCLE_DRIFT` | warning | Declared state in contract differs from inferred effective state |
+| `LIFECYCLE_INVALID_DECLARED_STATE` | warning | `State:` field contains an unrecognised lifecycle value |
+
+### Skills and doctrine
+
+| Code | Severity | Description |
+|---|---|---|
+| `DOCTRINE_MISSING` | error | Doctrine file not found at `governance/doctrine/doctrine.md` |
+| `SKILLS_DUPLICATE_ID` | warning | Two skill files share the same skill id |
+| `DOCTRINE_EMPTY` | warning | Doctrine file exists but is empty |
+| `DOCTRINE_INCOMPLETE` | warning | Doctrine file exists but is missing expected sections |
+| `SKILLS_EMPTY_FILE` | warning | A skill file exists but has no content |
+| `SKILLS_DIR_NOT_FOUND` | info | Skills directory (`governance/skills/`) does not exist |
+
+### Codex profile plugin
+
+| Code | Severity | Description |
+|---|---|---|
+| `CODEX_MISSING_AGENTS_MD` | warning | `AGENTS.md` not found (required for codex profile) |
+| `CODEX_EMPTY_AGENTS_MD` | warning | `AGENTS.md` exists but is empty |
+| `CODEX_AGENTS_MD_SPARSE` | info | `AGENTS.md` exists but is very short (fewer than 5 lines) |
 
 ---
 

@@ -1,4 +1,27 @@
-"""Scaffold logic for governance-os repo initialization."""
+"""Scaffold logic for governance-os repo initialization.
+
+Architecture
+------------
+Scaffold generation is split into two phases:
+
+  1. Planning  — plan_scaffold() returns a ScaffoldPlan: a pure data object
+                 describing every directory and file to create.  No I/O occurs.
+  2. Execution — execute_plan() applies a ScaffoldPlan to the filesystem,
+                 respecting the chosen ConflictPolicy.
+
+Both the dry-run display (format_plan) and real execution (execute_plan) operate
+on the same ScaffoldPlan object, guaranteeing they describe exactly the same
+mutation.
+
+Public API
+----------
+  plan_scaffold(root, profile, template, with_doctrine) -> ScaffoldPlan
+  execute_plan(plan, conflict)                          -> ScaffoldResult
+  validate_scaffold(root, plan)                         -> list[Issue]
+  format_plan(plan, check_existing)                     -> str
+  init_repo(root, ...)                                  -> ScaffoldResult
+      Convenience wrapper: plan_scaffold + execute_plan in one call.
+"""
 
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -13,7 +36,7 @@ def _template(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Init levels and profiles
+# Init levels, profiles, and scaffold versioning
 # ---------------------------------------------------------------------------
 
 
@@ -28,12 +51,29 @@ class InitProfile(StrEnum):
     CODEX = "codex"
 
 
-# Valid template names for the --template flag (subset of InitLevel, excludes "standard")
-# "multi-agent" extends governed and is only valid for the codex profile
+# Templates exposed via the --template flag (does not include "standard",
+# which is only reachable via the legacy --level flag).
 VALID_TEMPLATES = frozenset({"minimal", "governed", "multi-agent"})
 
+# All recognised template/level names accepted by plan_scaffold().
+# Includes "standard" for backward-compatible callers via init_repo().
+_ALL_TEMPLATES = frozenset({"minimal", "standard", "governed", "multi-agent"})
+
+# Scaffold contract version — increment when scaffold outputs change in a way
+# that existing repos may need to be updated.
+SCAFFOLD_VERSION = "1"
+
+
+class ConflictPolicy(StrEnum):
+    """How to handle files that already exist when executing a scaffold plan."""
+
+    SKIP = "skip"          # Leave existing files unchanged (default — safe, idempotent).
+    FAIL = "fail"          # Raise FileExistsError if any planned file already exists.
+    OVERWRITE = "overwrite"  # Replace existing files with the planned content.
+
+
 # ---------------------------------------------------------------------------
-# Example pipeline template
+# Example pipeline template strings
 # ---------------------------------------------------------------------------
 
 _EXAMPLE_PIPELINE = """\
@@ -83,7 +123,7 @@ Success Criteria:
 
 
 # ---------------------------------------------------------------------------
-# Codex session template (inline, so it doesn't depend on template load at init)
+# Codex session template
 # ---------------------------------------------------------------------------
 
 _CODEX_SESSION_TEMPLATE = """\
@@ -488,13 +528,43 @@ def _governance_yaml(profile: str, governed: bool, template: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Scaffold model
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ScaffoldFile:
+    """A single file entry in a ScaffoldPlan."""
+
+    path: Path      # Absolute path to the file to create.
+    content: str    # Exact content to write.
+
+
+@dataclass
+class ScaffoldPlan:
+    """Complete, immutable description of what govos init will create.
+
+    Built by plan_scaffold(); applied by execute_plan(); displayed by format_plan().
+    All three operations share this object, guaranteeing that dry-run output
+    matches real execution.
+    """
+
+    root: Path
+    profile: str
+    template: str
+    scaffold_version: str
+    directories: list[Path] = field(default_factory=list)    # absolute paths, ordered
+    files: list[ScaffoldFile] = field(default_factory=list)  # ordered, no duplicates
+
+
+# ---------------------------------------------------------------------------
 # Scaffold result
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class ScaffoldResult:
-    """Result of a scaffold operation."""
+    """Result of executing a scaffold plan."""
 
     root: Path
     level: str = "standard"
@@ -503,26 +573,313 @@ class ScaffoldResult:
     created_dirs: list[Path] = field(default_factory=list)
     created_files: list[Path] = field(default_factory=list)
     skipped_files: list[Path] = field(default_factory=list)
+    overwritten_files: list[Path] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
-# Core scaffolding
+# Core scaffold functions
 # ---------------------------------------------------------------------------
 
 
-def _create_dir(result: ScaffoldResult, d: Path) -> None:
-    if not d.exists():
-        d.mkdir(parents=True)
-        result.created_dirs.append(d)
+def plan_scaffold(
+    root: Path,
+    profile: str = "generic",
+    template: str = "standard",
+    with_doctrine: bool = False,
+) -> ScaffoldPlan:
+    """Build a scaffold plan without touching the filesystem.
+
+    This is the single source of scaffold truth. Both dry-run display and real
+    filesystem execution operate on the returned plan, guaranteeing they
+    describe exactly the same mutation.
+
+    Args:
+        root: Target repo root directory (need not exist yet).
+        profile: Governance profile — "generic" (default) or "codex".
+        template: Scaffold template — "minimal", "standard", "governed", or
+            "multi-agent". "standard" is accepted here for backward-compatible
+            callers; it is not exposed as a --template CLI value.
+        with_doctrine: Include a doctrine file even for standard-level templates.
+
+    Returns:
+        ScaffoldPlan listing every directory and file to create.
+
+    Raises:
+        ValueError: If profile is unrecognized, template is unsupported, or
+            the combination is invalid (e.g. multi-agent without codex profile).
+    """
+    # ------------------------------------------------------------------
+    # Validate inputs
+    # ------------------------------------------------------------------
+    try:
+        init_profile = InitProfile(profile)
+    except ValueError:
+        valid = ", ".join(p.value for p in InitProfile)
+        raise ValueError(f"Invalid profile: {profile!r}. Supported: {valid}")
+
+    if template not in _ALL_TEMPLATES:
+        raise ValueError(
+            f"Invalid template: {template!r}. "
+            f"Supported: {', '.join(sorted(VALID_TEMPLATES))}"
+        )
+
+    if template == "multi-agent" and init_profile != InitProfile.CODEX:
+        raise ValueError(
+            "The 'multi-agent' template requires --profile codex. "
+            "Use: govos init --profile codex --template multi-agent"
+        )
+
+    # ------------------------------------------------------------------
+    # Resolve effective level
+    # ------------------------------------------------------------------
+    effective_level = "governed" if template == "multi-agent" else template
+    try:
+        init_level = InitLevel(effective_level)
+    except ValueError:
+        init_level = InitLevel.STANDARD  # "standard" → STANDARD
+
+    is_governed = init_level == InitLevel.GOVERNED
+    gov_yaml = _governance_yaml(init_profile.value, governed=is_governed, template=template)
+
+    dirs: list[Path] = []
+    sfiles: list[ScaffoldFile] = []
+
+    def add_dir(p: Path) -> None:
+        dirs.append(p)
+
+    def add_file(p: Path, content: str) -> None:
+        sfiles.append(ScaffoldFile(path=p, content=content))
+
+    # ------------------------------------------------------------------
+    # MINIMAL — absolute minimum governance structure
+    # ------------------------------------------------------------------
+    add_dir(root / "governance" / "pipelines")
+    add_dir(root / "artifacts")
+    add_file(root / "governance.yaml", gov_yaml)
+    add_file(
+        root / "governance" / "pipelines" / "001--example.md",
+        _MINIMAL_PIPELINE if init_level == InitLevel.MINIMAL else _EXAMPLE_PIPELINE,
+    )
+
+    if init_level != InitLevel.MINIMAL:
+        # ------------------------------------------------------------------
+        # STANDARD — extends minimal (docs directory, README)
+        # ------------------------------------------------------------------
+        add_dir(root / "docs" / "governance")
+        # Use the governed README when the effective level is governed;
+        # this avoids the original bug where the governed README was shadowed
+        # by the standard README being written first.
+        readme = (
+            _template("README.governance.governed.md")
+            if is_governed
+            else _template("README.governance.md")
+        )
+        add_file(root / "docs" / "governance" / "README.governance.md", readme)
+
+        if is_governed or with_doctrine:
+            # ------------------------------------------------------------------
+            # GOVERNED — extends standard (registry artifacts, skills, doctrine)
+            # ------------------------------------------------------------------
+            add_dir(root / "artifacts" / "governance")
+            add_dir(root / "governance" / "skills")
+
+            if is_governed or with_doctrine:
+                add_dir(root / "governance" / "doctrine")
+                add_file(root / "governance" / "doctrine" / "doctrine.md", _DOCTRINE_TEMPLATE)
+
+    # ------------------------------------------------------------------
+    # Profile-specific assets
+    # ------------------------------------------------------------------
+    if init_profile == InitProfile.CODEX:
+        add_dir(root / "governance" / "sessions")
+        add_file(
+            root / "governance" / "sessions" / "session-template.md",
+            _CODEX_SESSION_TEMPLATE,
+        )
+        agents_md = (
+            _AGENTS_MD_MULTI_AGENT_TEMPLATE if template == "multi-agent" else _AGENTS_MD_TEMPLATE
+        )
+        add_file(root / "AGENTS.md", agents_md)
+        add_file(root / ".codex" / "config.toml", _CODEX_CONFIG_TOML)
+
+        # Preflight skill — only for governed-level repos
+        if is_governed:
+            add_file(
+                root / "governance" / "skills" / "govos-preflight.skill.md",
+                _CODEX_PREFLIGHT_SKILL,
+            )
+
+        # Multi-agent extras
+        if template == "multi-agent":
+            add_file(root / ".codex" / "agents" / "planner.toml", _PLANNER_TOML)
+            add_file(root / ".codex" / "agents" / "implementer.toml", _IMPLEMENTER_TOML)
+            add_file(root / ".codex" / "agents" / "reviewer.toml", _REVIEWER_TOML)
+            add_file(
+                root / "docs" / "governance" / "agents" / "planner.md", _PLANNER_CONTRACT
+            )
+            add_file(
+                root / "docs" / "governance" / "agents" / "implementer.md",
+                _IMPLEMENTER_CONTRACT,
+            )
+            add_file(
+                root / "docs" / "governance" / "agents" / "reviewer.md", _REVIEWER_CONTRACT
+            )
+            add_file(
+                root / "docs" / "contracts" / "multi-agent-workflow.md", _MULTI_AGENT_WORKFLOW
+            )
+            add_dir(root / "artifacts" / "governance" / "handoffs")
+            add_dir(root / "artifacts" / "governance" / "reviews")
+            add_file(root / "artifacts" / "governance" / "handoffs" / ".gitkeep", "")
+            add_file(root / "artifacts" / "governance" / "reviews" / ".gitkeep", "")
+
+    # ------------------------------------------------------------------
+    # Deduplicate directories (preserve declaration order)
+    # ------------------------------------------------------------------
+    seen_d: set[Path] = set()
+    unique_dirs = [d for d in dirs if d not in seen_d and not seen_d.add(d)]  # type: ignore[func-returns-value]
+
+    return ScaffoldPlan(
+        root=root,
+        profile=init_profile.value,
+        template=template,
+        scaffold_version=SCAFFOLD_VERSION,
+        directories=unique_dirs,
+        files=sfiles,
+    )
 
 
-def _write_file(result: ScaffoldResult, path: Path, content: str) -> None:
-    if path.exists():
-        result.skipped_files.append(path)
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-        result.created_files.append(path)
+def execute_plan(
+    plan: ScaffoldPlan,
+    conflict: ConflictPolicy = ConflictPolicy.SKIP,
+) -> ScaffoldResult:
+    """Execute a scaffold plan, applying the conflict policy for existing files.
+
+    Args:
+        plan: ScaffoldPlan from plan_scaffold().
+        conflict: How to handle files that already exist.
+            SKIP (default) — leave existing files unchanged (safe, idempotent).
+            FAIL — raise FileExistsError if any planned file already exists.
+            OVERWRITE — replace existing files with the planned content.
+
+    Returns:
+        ScaffoldResult tracking every directory and file action taken.
+
+    Raises:
+        FileExistsError: If conflict=FAIL and any planned file already exists.
+    """
+    level = "governed" if plan.template in ("governed", "multi-agent") else plan.template
+    result = ScaffoldResult(
+        root=plan.root,
+        level=level,
+        profile=plan.profile,
+        template=plan.template,
+    )
+
+    for d in plan.directories:
+        if not d.exists():
+            d.mkdir(parents=True, exist_ok=True)
+            result.created_dirs.append(d)
+
+    for sf in plan.files:
+        if sf.path.exists():
+            if conflict == ConflictPolicy.FAIL:
+                raise FileExistsError(
+                    f"File already exists: {sf.path.relative_to(plan.root)}"
+                )
+            if conflict == ConflictPolicy.OVERWRITE:
+                sf.path.parent.mkdir(parents=True, exist_ok=True)
+                sf.path.write_text(sf.content, encoding="utf-8")
+                result.overwritten_files.append(sf.path)
+            else:
+                result.skipped_files.append(sf.path)
+        else:
+            sf.path.parent.mkdir(parents=True, exist_ok=True)
+            sf.path.write_text(sf.content, encoding="utf-8")
+            result.created_files.append(sf.path)
+
+    return result
+
+
+def validate_scaffold(root: Path, plan: ScaffoldPlan) -> list[Issue]:
+    """Verify that a scaffold plan was applied successfully.
+
+    Checks that all planned directories and files exist on disk. Suitable for
+    post-init integrity verification immediately after execute_plan().
+
+    Args:
+        root: Repo root directory (used for readable relative paths in messages).
+        plan: ScaffoldPlan that was applied.
+
+    Returns:
+        List of Issue objects for missing items. Empty list means the scaffold
+        is intact.
+    """
+    issues: list[Issue] = []
+
+    for d in plan.directories:
+        if not d.exists():
+            issues.append(
+                Issue(
+                    code="SCAFFOLD_DIR_MISSING",
+                    severity=Severity.ERROR,
+                    message=f"Expected directory was not created: {d.relative_to(root)}",
+                    path=d,
+                )
+            )
+
+    for sf in plan.files:
+        if not sf.path.exists():
+            issues.append(
+                Issue(
+                    code="SCAFFOLD_FILE_MISSING",
+                    severity=Severity.ERROR,
+                    message=f"Expected file was not created: {sf.path.relative_to(root)}",
+                    path=sf.path,
+                )
+            )
+
+    return issues
+
+
+def format_plan(plan: ScaffoldPlan, check_existing: bool = False) -> str:
+    """Return a human-readable dry-run preview of a ScaffoldPlan.
+
+    Args:
+        plan: The scaffold plan to display.
+        check_existing: If True, check the filesystem and annotate items that
+            already exist (they would be skipped under the default conflict
+            policy).
+
+    Returns:
+        Multi-line string suitable for printing to a terminal.
+    """
+    lines = [
+        "DRY RUN — governance-os scaffold plan",
+        f"  profile={plan.profile}  template={plan.template}"
+        f"  scaffold_version={plan.scaffold_version}",
+        f"  root={plan.root}",
+    ]
+
+    if plan.directories:
+        lines.append(f"\nDirectories ({len(plan.directories)}):")
+        for d in plan.directories:
+            lines.append(f"  + {d.relative_to(plan.root)}/")
+
+    if plan.files:
+        lines.append(f"\nFiles ({len(plan.files)}):")
+        for sf in plan.files:
+            rel = sf.path.relative_to(plan.root)
+            if check_existing and sf.path.exists():
+                lines.append(f"  ~ {rel}  (exists — would skip)")
+            else:
+                lines.append(f"  + {rel}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Public convenience entry point
+# ---------------------------------------------------------------------------
 
 
 def init_repo(
@@ -531,204 +888,48 @@ def init_repo(
     profile: str = "generic",
     with_doctrine: bool = False,
     template: str | None = None,
+    conflict: ConflictPolicy = ConflictPolicy.SKIP,
 ) -> ScaffoldResult:
     """Initialize a governance-os repo at *root*.
 
-    Creates the standard directory layout and default files.
-    Existing files are never overwritten.
+    Convenience wrapper around plan_scaffold() + execute_plan(). Use those
+    functions directly if you need dry-run capability or fine-grained conflict
+    control.
 
     Args:
         root: Target directory (created if it does not exist).
         level: Governance maturity level — "minimal", "standard", or "governed".
-            Legacy parameter; use *template* for new code.
-        profile: Optional profile — "generic" (default) or "codex".
-        with_doctrine: If True, scaffold an optional doctrine file.
-        template: Template name — "minimal" or "governed". Takes precedence over
-            *level* when provided. Invalid template values raise ValueError.
+            Legacy parameter; prefer *template* for new callers.
+        profile: Governance profile — "generic" (default) or "codex".
+        with_doctrine: If True, scaffold an optional doctrine file even at
+            standard level.
+        template: Template name. Takes precedence over *level* when provided.
+            Supported values: "minimal", "governed", "multi-agent".
+        conflict: How to handle existing files. Default: SKIP (safe, idempotent).
 
     Returns:
-        ScaffoldResult describing what was created or skipped.
+        ScaffoldResult describing every directory and file action taken.
 
     Raises:
-        ValueError: If *template* is given but not in VALID_TEMPLATES.
+        ValueError: If *template* is given but invalid, if the profile is
+            unrecognized, or if the combination is unsupported.
+        FileExistsError: If conflict=FAIL and a planned file already exists.
     """
-    # Resolve effective level: template takes precedence over level
     if template is not None:
-        if template not in VALID_TEMPLATES:
-            raise ValueError(
-                f"Invalid template: {template!r}. "
-                f"Supported templates: {', '.join(sorted(VALID_TEMPLATES))}"
-            )
-        # multi-agent is codex-only — reject generic+multi-agent before normalising profile
-        if template == "multi-agent":
-            resolved_profile = profile if profile in (p.value for p in InitProfile) else "generic"
-            if resolved_profile != InitProfile.CODEX:
-                raise ValueError(
-                    "The 'multi-agent' template requires --profile codex. "
-                    "Use: govos init --profile codex --template multi-agent"
-                )
-        # "multi-agent" builds on the governed base level
-        effective_level = "governed" if template == "multi-agent" else template
+        effective_template = template
     else:
-        effective_level = level
+        # Legacy --level support: resolve to nearest template equivalent.
+        # Invalid levels fall back to "standard" for backward compatibility.
+        try:
+            init_level = InitLevel(level)
+        except ValueError:
+            init_level = InitLevel.STANDARD
+        effective_template = init_level.value
 
-    try:
-        init_level = InitLevel(effective_level)
-    except ValueError:
-        init_level = InitLevel.STANDARD
-
-    try:
-        init_profile = InitProfile(profile)
-    except ValueError:
-        init_profile = InitProfile.GENERIC
-
-    effective_template = template or effective_level
-
-    result = ScaffoldResult(
-        root=root,
-        level=init_level.value,
-        profile=init_profile.value,
-        template=effective_template,
+    plan = plan_scaffold(
+        root, profile=profile, template=effective_template, with_doctrine=with_doctrine
     )
-
-    # Decide governance.yaml content upfront (profile + governed flag + template)
-    is_governed = init_level == InitLevel.GOVERNED
-    gov_yaml_content = _governance_yaml(
-        init_profile.value, governed=is_governed, template=effective_template
-    )
-
-    # ------------------------------------------------------------------
-    # MINIMAL — absolute minimum governance structure
-    # ------------------------------------------------------------------
-    _create_dir(result, root / "governance" / "pipelines")
-    _create_dir(result, root / "artifacts")
-    _write_file(result, root / "governance.yaml", gov_yaml_content)
-    _write_file(
-        result,
-        root / "governance" / "pipelines" / "001--example.md",
-        _MINIMAL_PIPELINE if init_level == InitLevel.MINIMAL else _EXAMPLE_PIPELINE,
-    )
-
-    if init_level == InitLevel.MINIMAL:
-        _apply_profile(result, root, init_profile, init_level, effective_template)
-        return result
-
-    # ------------------------------------------------------------------
-    # STANDARD — default structure (extends minimal)
-    # ------------------------------------------------------------------
-    _create_dir(result, root / "docs" / "governance")
-    _write_file(
-        result,
-        root / "docs" / "governance" / "README.governance.md",
-        _template("README.governance.md"),
-    )
-
-    if init_level == InitLevel.STANDARD and not with_doctrine:
-        _apply_profile(result, root, init_profile, init_level, effective_template)
-        return result
-
-    # ------------------------------------------------------------------
-    # GOVERNED — full structure (extends standard)
-    # ------------------------------------------------------------------
-    _create_dir(result, root / "artifacts" / "governance")
-    _create_dir(result, root / "governance" / "skills")
-
-    _write_file(
-        result,
-        root / "docs" / "governance" / "README.governance.md",
-        _template("README.governance.governed.md"),
-    )
-
-    # Doctrine (optional but always written for governed level; also --with-doctrine)
-    if with_doctrine or init_level == InitLevel.GOVERNED:
-        _create_dir(result, root / "governance" / "doctrine")
-        _write_file(
-            result,
-            root / "governance" / "doctrine" / "doctrine.md",
-            _DOCTRINE_TEMPLATE,
-        )
-
-    _apply_profile(result, root, init_profile, init_level, effective_template)
-    return result
-
-
-def _apply_profile(
-    result: ScaffoldResult,
-    root: Path,
-    profile: InitProfile,
-    level: InitLevel,
-    template: str = "",
-) -> None:
-    """Apply profile-specific scaffold assets.
-
-    Args:
-        result: ScaffoldResult to track created/skipped files.
-        root: Repo root directory.
-        profile: Active profile.
-        level: Effective init level (controls which profile assets are included).
-        template: Effective template name (controls multi-agent extras).
-    """
-    if profile == InitProfile.CODEX:
-        # Always-on Codex assets (all templates)
-        _create_dir(result, root / "governance" / "sessions")
-        _write_file(
-            result,
-            root / "governance" / "sessions" / "session-template.md",
-            _CODEX_SESSION_TEMPLATE,
-        )
-        agents_md = _AGENTS_MD_MULTI_AGENT_TEMPLATE if template == "multi-agent" else _AGENTS_MD_TEMPLATE
-        _write_file(result, root / "AGENTS.md", agents_md)
-        _write_file(result, root / ".codex" / "config.toml", _CODEX_CONFIG_TOML)
-
-        # Codex governed: add a concrete preflight skill
-        if level == InitLevel.GOVERNED:
-            _create_dir(result, root / "governance" / "skills")
-            _write_file(
-                result,
-                root / "governance" / "skills" / "govos-preflight.skill.md",
-                _CODEX_PREFLIGHT_SKILL,
-            )
-
-        # Codex multi-agent: role definitions, role contracts, workflow, artifact dirs
-        if template == "multi-agent":
-            # Role definitions (.codex/agents/)
-            _write_file(result, root / ".codex" / "agents" / "planner.toml", _PLANNER_TOML)
-            _write_file(result, root / ".codex" / "agents" / "implementer.toml", _IMPLEMENTER_TOML)
-            _write_file(result, root / ".codex" / "agents" / "reviewer.toml", _REVIEWER_TOML)
-
-            # Role governance contracts (docs/governance/agents/)
-            _write_file(
-                result,
-                root / "docs" / "governance" / "agents" / "planner.md",
-                _PLANNER_CONTRACT,
-            )
-            _write_file(
-                result,
-                root / "docs" / "governance" / "agents" / "implementer.md",
-                _IMPLEMENTER_CONTRACT,
-            )
-            _write_file(
-                result,
-                root / "docs" / "governance" / "agents" / "reviewer.md",
-                _REVIEWER_CONTRACT,
-            )
-
-            # Workflow contract (docs/contracts/)
-            _write_file(
-                result,
-                root / "docs" / "contracts" / "multi-agent-workflow.md",
-                _MULTI_AGENT_WORKFLOW,
-            )
-
-            # Artifact directories for handoffs and reviews
-            _create_dir(result, root / "artifacts" / "governance" / "handoffs")
-            _create_dir(result, root / "artifacts" / "governance" / "reviews")
-            _write_file(
-                result, root / "artifacts" / "governance" / "handoffs" / ".gitkeep", ""
-            )
-            _write_file(
-                result, root / "artifacts" / "governance" / "reviews" / ".gitkeep", ""
-            )
+    return execute_plan(plan, conflict=conflict)
 
 
 # ---------------------------------------------------------------------------
@@ -816,6 +1017,11 @@ def format_result(result: ScaffoldResult) -> str:
         lines.append("\nFiles created:")
         for f in result.created_files:
             lines.append(f"  + {f.relative_to(result.root)}")
+
+    if result.overwritten_files:
+        lines.append("\nFiles overwritten:")
+        for f in result.overwritten_files:
+            lines.append(f"  ! {f.relative_to(result.root)}")
 
     if result.skipped_files:
         lines.append("\nFiles skipped (already exist):")

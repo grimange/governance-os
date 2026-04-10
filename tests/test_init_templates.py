@@ -236,11 +236,10 @@ def test_invalid_template_message_shows_valid_options(tmp_path):
     assert "governed" in str(exc_info.value)
 
 
-def test_unknown_profile_falls_back_to_generic(tmp_path):
-    # Unknown profile silently falls back (no agents.md, no codex files)
-    result = init_repo(tmp_path, profile="unknown", template="minimal")
-    assert result.profile == "generic"
-    assert not (tmp_path / "AGENTS.md").exists()
+def test_unknown_profile_raises_value_error(tmp_path):
+    # Unknown profile now raises ValueError — strict validation in plan_scaffold()
+    with pytest.raises(ValueError, match="Invalid profile"):
+        init_repo(tmp_path, profile="unknown", template="minimal")
 
 
 # ---------------------------------------------------------------------------

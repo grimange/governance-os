@@ -1,3 +1,7 @@
-"""Package version for governance-os."""
+"""Package version for governance-os.
 
-__version__ = "0.1.0"
+This is the single canonical version source. Update only this file when bumping
+the version; pyproject.toml and __init__.py derive from it.
+"""
+
+__version__ = "0.9.0"

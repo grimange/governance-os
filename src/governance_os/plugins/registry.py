@@ -7,15 +7,15 @@ Plugin activation order (deterministic):
   2. Append enabled_plugins from repo config (deduplicated, in order listed).
   3. Remove disabled_plugins from repo config.
 
-Only plugins present in _PLUGIN_REGISTRY can be activated.
-Unknown plugin IDs in config are ignored silently.
+Only plugins present in PLUGIN_REGISTRY can be activated.
+Unknown plugin IDs in config emit a WARNING issue via validate_plugin_ids().
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from governance_os.models.issue import Issue
+from governance_os.models.issue import Issue, Severity
 from governance_os.models.pipeline import Pipeline
 from governance_os.plugins.authority_plugin import AuthorityPlugin
 from governance_os.plugins.base import Plugin
@@ -37,10 +37,51 @@ _PLUGIN_REGISTRY: dict[str, Plugin] = {
     "multi_agent": MultiAgentPlugin(),
 }
 
+# Public alias — same object, stable import surface.
+PLUGIN_REGISTRY: dict[str, Plugin] = _PLUGIN_REGISTRY
+
 
 def list_plugins() -> list[Plugin]:
     """Return all registered plugins in registration order."""
     return list(_PLUGIN_REGISTRY.values())
+
+
+def is_known_plugin(plugin_id: str) -> bool:
+    """Return True if *plugin_id* is registered in the plugin registry.
+
+    Args:
+        plugin_id: Plugin identifier to check.
+
+    Returns:
+        True when the plugin is registered; False otherwise.
+    """
+    return plugin_id in _PLUGIN_REGISTRY
+
+
+def validate_plugin_ids(plugin_ids: list[str]) -> list[Issue]:
+    """Return WARNING issues for any plugin IDs that are not registered.
+
+    Callers (e.g. preflight, config validation) use this to surface unknown
+    plugin IDs before they are silently dropped by resolve_active_plugins().
+
+    Args:
+        plugin_ids: Plugin IDs to validate (from enabled_plugins/disabled_plugins).
+
+    Returns:
+        One WARNING Issue per unknown plugin ID.  Empty list when all IDs are valid.
+    """
+    issues: list[Issue] = []
+    for pid in plugin_ids:
+        if pid not in _PLUGIN_REGISTRY:
+            issues.append(
+                Issue(
+                    code="PLUGIN_UNKNOWN",
+                    severity=Severity.WARNING,
+                    message=f"Plugin '{pid}' is not registered and will be ignored.",
+                    suggestion=f"Available plugins: {', '.join(sorted(_PLUGIN_REGISTRY))}",
+                )
+            )
+    return issues
 
 
 def resolve_active_plugins(

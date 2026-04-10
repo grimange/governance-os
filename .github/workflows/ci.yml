@@ -26,6 +26,19 @@ jobs:
       - name: Install package and dev dependencies
         run: pip install -e ".[dev]"
 
+      - name: Check version consistency
+        run: |
+          python - <<'EOF'
+          import governance_os
+          from importlib.metadata import version
+          pkg_ver = version("governance-os")
+          mod_ver = governance_os.__version__
+          if pkg_ver != mod_ver:
+              print(f"ERROR: version mismatch — package metadata={pkg_ver!r}, governance_os.__version__={mod_ver!r}")
+              raise SystemExit(1)
+          print(f"Version OK: {pkg_ver}")
+          EOF
+
       - name: Run tests with coverage
         run: pytest --cov=governance_os --cov-report=term-missing
 
@@ -49,3 +62,45 @@ jobs:
 
       - name: Check Black formatting
         run: black --check src/ tests/
+
+  build-check:
+    name: Artifact build and smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tool
+        run: pip install build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Verify artifacts were created
+        run: |
+          ls -lh dist/
+          test -n "$(ls dist/*.whl 2>/dev/null)" || (echo "ERROR: no wheel produced" && exit 1)
+          test -n "$(ls dist/*.tar.gz 2>/dev/null)" || (echo "ERROR: no sdist produced" && exit 1)
+          echo "Artifacts OK"
+
+      - name: Smoke test — install wheel in clean environment
+        run: |
+          python -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install --quiet dist/*.whl
+          echo "--- govos --help ---"
+          /tmp/smoke-venv/bin/govos --help
+          echo "--- import and version ---"
+          /tmp/smoke-venv/bin/python - <<'EOF'
+          import governance_os
+          from importlib.metadata import version
+          pkg_ver = version("governance-os")
+          assert pkg_ver == governance_os.__version__, (
+              f"version mismatch: metadata={pkg_ver!r} module={governance_os.__version__!r}"
+          )
+          print(f"OK: governance_os=={pkg_ver}")
+          EOF

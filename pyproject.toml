@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "governance-os"
-version = "0.3.0"
+dynamic = ["version"]
 description = "A governance runtime for pipeline contract management — discover, validate, and report on structured pipeline contracts in any repository."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -49,16 +49,22 @@ dev = [
     "ruff>=0.4.0",
     "black>=24.0.0",
     "pre-commit>=3.0.0",
+    "build>=1.0.0",
     "mcp>=1.0.0",
 ]
 
 [project.urls]
-"Source" = "https://github.com/ramjf/governance-os"
-"Bug Tracker" = "https://github.com/ramjf/governance-os/issues"
+"Homepage" = "https://github.com/grimange/governance-os"
+"Source" = "https://github.com/grimange/governance-os"
+"Bug Tracker" = "https://github.com/grimange/governance-os/issues"
+"Changelog" = "https://github.com/grimange/governance-os/blob/main/CHANGELOG.md"
 
 [project.scripts]
 govos = "governance_os.cli:app"
 govos-mcp = "governance_os.mcp.server:main"
+
+[tool.hatch.version]
+path = "src/governance_os/version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/governance_os"]

@@ -17,4 +17,21 @@ Available plugins:
   doctrine           — validates governance doctrine files
   skills             — validates skill definitions
   codex_instructions — Codex-specific checks (AGENTS.md)
+  multi_agent        — multi-agent role coverage checks
 """
+
+from governance_os.plugins.base import Plugin
+from governance_os.plugins.registry import (
+    PLUGIN_REGISTRY,
+    is_known_plugin,
+    list_plugins,
+    validate_plugin_ids,
+)
+
+__all__ = [
+    "Plugin",
+    "PLUGIN_REGISTRY",
+    "is_known_plugin",
+    "list_plugins",
+    "validate_plugin_ids",
+]
