@@ -504,3 +504,129 @@ def test_govos_help_includes_all_top_level_commands():
     for cmd in ("scan", "verify", "status", "preflight", "score",
                 "audit", "profile", "pipeline", "plugin", "registry", "skills"):
         assert cmd in out, f"govos --help missing command: {cmd}"
+
+
+# ---------------------------------------------------------------------------
+# Section J: Consolidation gap tests
+# Closes the highest-value CLI contract gaps not covered in Sections A–I.
+# ---------------------------------------------------------------------------
+
+
+def test_score_compare_produces_non_empty_delta(tmp_path: Path):
+    """score --compare produces non-empty delta when governance health changes.
+
+    Workflow: init a repo with a bad pipeline (absolute output path) → save
+    baseline score → remove the bad pipeline → compare against baseline.
+    Integrity category should improve, giving at least one non-zero delta entry.
+    """
+    # Init with a bad pipeline (absolute output path triggers ABSOLUTE_PATH ERROR)
+    _run(["init", str(tmp_path)])
+    bad_pipeline = tmp_path / "governance" / "pipelines" / "001--bad.md"
+    bad_pipeline.write_text(
+        "# 001 — Bad\n\nStage: establish\n\nPurpose:\nTest.\n\n"
+        "Outputs:\n- /absolute/path/out.json\n\nSuccess criteria:\n- done\n",
+        encoding="utf-8",
+    )
+    old = tmp_path / "governance" / "pipelines" / "001--example.md"
+    if old.exists():
+        old.unlink()
+
+    # Capture baseline with the bad pipeline present
+    baseline = tmp_path / "baseline-score.json"
+    _run(["score", str(tmp_path), "--json", "--out", str(baseline)])
+    assert baseline.exists(), "baseline score file not created"
+
+    # Fix the pipeline (remove absolute path)
+    bad_pipeline.write_text(
+        "# 001 — Bad\n\nStage: establish\n\nPurpose:\nTest.\n\n"
+        "Outputs:\n- artifacts/out.json\n\nSuccess criteria:\n- done\n- verified\n",
+        encoding="utf-8",
+    )
+
+    # Compare against baseline — delta should be non-empty
+    code, out = _run(["score", str(tmp_path), "--json", "--compare", str(baseline)])
+    assert code == 0
+    data = json.loads(out)
+    assert "delta" in data, "score --compare must produce a delta field"
+    assert isinstance(data["delta"], list)
+    assert len(data["delta"]) > 0, (
+        "score --compare must produce at least one delta entry when governance health changes"
+    )
+
+
+def test_authority_verify_exits_1_missing_governance_yaml(tmp_path: Path):
+    """authority verify exits 1 when governance.yaml is absent.
+
+    AUTHORITY_MISSING_ROOT is ERROR severity → exit 1.
+    An empty tmp_path has no governance.yaml, which is a required authority file.
+    """
+    code, out = _run(["authority", "verify", str(tmp_path)])
+    assert code == 1, (
+        f"authority verify must exit 1 when governance.yaml is absent. "
+        f"Got exit {code}. Output: {out}"
+    )
+
+
+def test_registry_build_exits_1_duplicate_pipeline_ids(tmp_path: Path):
+    """registry build exits 1 when two pipelines share the same numeric ID.
+
+    REGISTRY_DUPLICATE_ID is ERROR severity → exit 1.
+    """
+    _run(["init", str(tmp_path)])
+    pipelines_dir = tmp_path / "governance" / "pipelines"
+    # Remove default scaffold pipeline if present
+    for f in pipelines_dir.glob("001--*.md"):
+        f.unlink()
+    # Write two pipelines with the same numeric ID 001
+    (pipelines_dir / "001--alpha.md").write_text(
+        "# 001 — Alpha\n\nStage: establish\n\nPurpose:\nFirst.\n\n"
+        "Outputs:\n- artifacts/a.json\n\nSuccess criteria:\n- done\n",
+        encoding="utf-8",
+    )
+    (pipelines_dir / "001--beta.md").write_text(
+        "# 001 — Beta\n\nStage: establish\n\nPurpose:\nSecond.\n\n"
+        "Outputs:\n- artifacts/b.json\n\nSuccess criteria:\n- done\n",
+        encoding="utf-8",
+    )
+    code, out = _run(["registry", "build", str(tmp_path)])
+    assert code == 1, (
+        f"registry build must exit 1 for duplicate pipeline IDs. "
+        f"Got exit {code}. Output: {out}"
+    )
+
+
+def test_preflight_warns_on_unknown_plugin_id(tmp_path: Path):
+    """preflight emits PLUGIN_UNKNOWN warning when config lists an unknown plugin ID.
+
+    validate_plugin_ids() is called inside preflight(). An unknown plugin ID in
+    enabled_plugins produces a PLUGIN_UNKNOWN WARNING finding. WARNING does not
+    block (exit 0), but the finding must appear in JSON output.
+    """
+    _run(["init", str(tmp_path)])
+    # Write a governance.yaml that references a non-existent plugin.
+    # Preserve pipelines_dir so the directory layout from govos init remains valid.
+    (tmp_path / "governance.yaml").write_text(
+        "profile: generic\n"
+        "pipelines_dir: governance/pipelines\n"
+        "contracts_glob: '**/*.md'\n"
+        "enabled_plugins:\n  - nonexistent_plugin_xyz\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "governance" / "pipelines" / "001--setup.md").write_text(
+        "# 001 — Setup\n\nStage: establish\n\nPurpose:\nBootstrap.\n\n"
+        "Outputs:\n- artifacts/out.json\n\nSuccess criteria:\n- done\n",
+        encoding="utf-8",
+    )
+    old = tmp_path / "governance" / "pipelines" / "001--example.md"
+    if old.exists():
+        old.unlink()
+
+    code, out = _run(["preflight", str(tmp_path), "--json"])
+    # PLUGIN_UNKNOWN is WARNING → does not block → exit 0
+    assert code == 0, f"PLUGIN_UNKNOWN warning must not cause exit 1. Got {code}. Output: {out}"
+    data = json.loads(out)
+    codes = [i.get("code", "") for i in data.get("issues", [])]
+    assert "PLUGIN_UNKNOWN" in codes, (
+        f"Expected PLUGIN_UNKNOWN in preflight issues for unknown plugin ID. "
+        f"Got codes: {codes}"
+    )

@@ -523,7 +523,8 @@ active = profile.default_plugins
        - config.disabled_plugins
 ```
 
-Only plugins in the built-in registry can be activated. Unknown plugin IDs are silently ignored.
+Only plugins in the built-in registry can be activated. Unknown plugin IDs in
+`enabled_plugins` or `disabled_plugins` emit a `PLUGIN_UNKNOWN` warning during `govos preflight`.
 
 ### Configuring the profile in governance.yaml
 
@@ -616,6 +617,18 @@ Verifies lifecycle integrity for a single pipeline. Exits `1` if there is lifecy
 
 ---
 
+### `govos plugin list`
+
+Lists all registered governance plugins with their IDs and descriptions. Always exits `0`.
+
+### `govos plugin show PLUGIN_ID`
+
+Shows details of a specific plugin. Exits `0` if found, `2` if not found.
+
+**Available plugin IDs:** `authority`, `doctrine`, `skills`, `codex_instructions`, `multi_agent`
+
+---
+
 ## Python API
 
 ```python
@@ -654,6 +667,8 @@ score_with_delta = api.score(root, compare_path=Path("prev.json"))  # ScoreResul
 profiles         = api.profile_list()                       # list[ProfileDefinition]
 profile          = api.profile_show("codex")                # ProfileDefinition | None
 profile, missing = api.profile_validate(root)               # (ProfileDefinition, list[str])
+plugins          = api.plugin_list()                        # list[Plugin]
+plugin           = api.plugin_show("authority")             # Plugin | None
 
 # v0.8 — Pipeline lifecycle
 lifecycle        = api.pipeline_lifecycle(root)             # LifecycleResult

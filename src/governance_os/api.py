@@ -371,6 +371,12 @@ def preflight(
     if include_authority and "authority" not in disabled:
         disabled.append("authority")
 
+    # Warn on unknown plugin IDs (enabled or disabled) before activation resolves them.
+    unknown_plugin_issues = validate_plugin_ids(
+        list(config.enabled_plugins) + list(config.disabled_plugins)
+    )
+    all_issues.extend(unknown_plugin_issues)
+
     plugin_check_names, plugin_issues = run_plugin_checks(
         root,
         pipelines,
